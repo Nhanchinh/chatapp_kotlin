@@ -1,0 +1,62 @@
+package com.example.chatapp.ui.home
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+
+@Composable
+fun StoryAvatar(name: String, online: Boolean, modifier: Modifier = Modifier) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        val ring = Brush.linearGradient(listOf(Color(0xFF42A5F5), Color(0xFF7E57C2)))
+        Box(
+            modifier = modifier
+                .size(62.dp)
+                .clip(CircleShape)
+                .background(ring)
+                .padding(3.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .clip(CircleShape)
+                    .background(Color(0xFFB39DDB)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(text = name.firstOrNull()?.uppercase() ?: "?", color = Color.White)
+            }
+            if (online) {
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .align(Alignment.BottomEnd)
+                        .clip(CircleShape)
+                        .background(Color(0xFF4CAF50))
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = name,
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+
