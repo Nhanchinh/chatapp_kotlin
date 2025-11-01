@@ -13,7 +13,9 @@ data class LoginUiState(
     val isLoggedIn: Boolean = false
 )
 
-class LoginViewModel : ViewModel() {
+class LoginViewModel(
+    private val authViewModel: AuthViewModel
+) : ViewModel() {
     private val _uiState = MutableStateFlow(LoginUiState())
     val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()
 
@@ -35,10 +37,18 @@ class LoginViewModel : ViewModel() {
 
         // Fixed credentials check
         val isValid = current.username == "admin" && current.password == "123456"
-        _uiState.value = if (isValid) {
-            _uiState.value.copy(isLoading = false, isLoggedIn = true)
+        
+        if (isValid) {
+            // Save token and login state
+            // Generate a fake access token (fixed for now)
+            val fakeAccessToken = "fake_access_token_${System.currentTimeMillis()}"
+            // Token expiry set to 7 days from now
+            val expiryTime = System.currentTimeMillis() + (7 * 24 * 60 * 60 * 1000)
+            
+            authViewModel.login(fakeAccessToken, expiryTime)
+            _uiState.value = current.copy(isLoading = false, isLoggedIn = true)
         } else {
-            _uiState.value.copy(isLoading = false, errorMessage = "Sai tài khoản hoặc mật khẩu")
+            _uiState.value = current.copy(isLoading = false, errorMessage = "Sai tài khoản hoặc mật khẩu")
         }
     }
 }

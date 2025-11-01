@@ -36,11 +36,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
+import androidx.navigation.NavController
 import com.example.chatapp.ui.common.KeyboardDismissWrapper
+import com.example.chatapp.ui.navigation.NavRoutes
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(onLogout: () -> Unit) {
+fun HomeScreen(navController: NavController? = null, onLogout: () -> Unit) {
     val chats = listOf(
         Triple("Quang Nguyễn", "Bạn: v chịu", "16:34"),
         Triple("Nguyễn Đăng Nam", "😄😄😄", "11:09"),
@@ -52,9 +54,6 @@ fun HomeScreen(onLogout: () -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
 
     Scaffold(
-        topBar = {
-            TopAppBar(title = { Text("messenger") })
-        },
         bottomBar = { BottomNav(selected = selectedTab, onSelected = { selectedTab = it }) }
     ) { inner ->
         Column(
@@ -107,7 +106,10 @@ fun HomeScreen(onLogout: () -> Unit) {
                                         name = name,
                                         lastMessage = message,
                                         time = time,
-                                        isOnline = name.hashCode() % 2 == 0
+                                        isOnline = name.hashCode() % 2 == 0,
+                                        onClick = {
+                                            navController?.navigate("chat/$name")
+                                        }
                                     )
                                 }
                                 item { Spacer(modifier = Modifier.height(72.dp)) }

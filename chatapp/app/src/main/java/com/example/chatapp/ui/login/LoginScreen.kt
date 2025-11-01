@@ -15,20 +15,22 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.chatapp.viewmodel.AuthViewModel
 import com.example.chatapp.viewmodel.LoginViewModel
 import com.example.chatapp.ui.common.KeyboardDismissWrapper
 
 @Composable
 fun LoginScreen(
     onLoginSuccess: () -> Unit,
-    viewModel: LoginViewModel = viewModel()
+    authViewModel: AuthViewModel
 ) {
-    val state by viewModel.uiState.collectAsState()
+    val loginViewModel = remember { LoginViewModel(authViewModel) }
+    val state by loginViewModel.uiState.collectAsState()
 
     LaunchedEffect(state.isLoggedIn) {
         if (state.isLoggedIn) onLoginSuccess()
@@ -47,7 +49,7 @@ fun LoginScreen(
 
         OutlinedTextField(
             value = state.username,
-            onValueChange = viewModel::onUsernameChange,
+            onValueChange = loginViewModel::onUsernameChange,
             label = { Text("Tài khoản") },
             singleLine = true
         )
@@ -55,7 +57,7 @@ fun LoginScreen(
 
         OutlinedTextField(
             value = state.password,
-            onValueChange = viewModel::onPasswordChange,
+            onValueChange = loginViewModel::onPasswordChange,
             label = { Text("Mật khẩu") },
             singleLine = true,
             visualTransformation = PasswordVisualTransformation()
@@ -68,7 +70,7 @@ fun LoginScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        Button(onClick = { viewModel.login() }, enabled = !state.isLoading) {
+        Button(onClick = { loginViewModel.login() }, enabled = !state.isLoading) {
             if (state.isLoading) {
                 CircularProgressIndicator(modifier = Modifier.padding(4.dp))
             } else {
