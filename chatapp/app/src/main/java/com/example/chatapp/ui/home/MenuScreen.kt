@@ -1,6 +1,7 @@
 package com.example.chatapp.ui.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -12,10 +13,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
+import com.example.chatapp.ui.navigation.NavRoutes
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MenuScreen(onLogout: () -> Unit) {
+fun MenuScreen(navController: NavController? = null, onLogout: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
@@ -98,6 +101,7 @@ fun MenuScreen(onLogout: () -> Unit) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .clickable { navController?.navigate(NavRoutes.FriendRequest.route) }
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -120,6 +124,7 @@ fun MenuScreen(onLogout: () -> Unit) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .clickable { navController?.navigate(NavRoutes.FriendsList.route) }
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {

@@ -6,6 +6,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import com.example.chatapp.ui.chat.ChatScreen
 import com.example.chatapp.ui.chat.ContactInfoScreen
+import com.example.chatapp.ui.home.FriendRequestScreen
+import com.example.chatapp.ui.home.FriendsListScreen
 import com.example.chatapp.ui.home.HomeScreen
 import com.example.chatapp.ui.login.LoginScreen
 import com.example.chatapp.viewmodel.AuthViewModel
@@ -58,6 +60,19 @@ fun AppNavGraph(
             ContactInfoScreen(
                 contactName = contactName,
                 onBack = { navController.popBackStack() }
+            )
+        }
+        composable(NavRoutes.FriendRequest.route) {
+            FriendRequestScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(NavRoutes.FriendsList.route) {
+            FriendsListScreen(
+                onBack = { navController.popBackStack() },
+                onMessageClick = { friendName ->
+                    navController.navigate("chat/$friendName")
+                }
             )
         }
     }

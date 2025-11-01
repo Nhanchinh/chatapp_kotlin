@@ -121,7 +121,7 @@ fun HomeScreen(navController: NavController? = null, onLogout: () -> Unit) {
                     NewsScreen()
                 }
                 HomeTab.MENU -> {
-                    MenuScreen(onLogout = onLogout)
+                    MenuScreen(navController = navController, onLogout = onLogout)
                 }
             }
         }
