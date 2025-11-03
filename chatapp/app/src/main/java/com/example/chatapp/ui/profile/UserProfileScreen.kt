@@ -1,5 +1,6 @@
 package com.example.chatapp.ui.profile
 
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -17,6 +18,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import com.example.chatapp.utils.rememberImagePickerLauncher
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -25,7 +28,16 @@ fun UserProfileScreen(
     username: String = "chính.thannhan.50",
     onBack: () -> Unit
 ) {
-    var selectedTab by remember { mutableStateOf(0) }
+    var coverImageUri by remember { mutableStateOf<Uri?>(null) }
+    var profileImageUri by remember { mutableStateOf<Uri?>(null) }
+    
+    val coverImagePicker = rememberImagePickerLauncher { uri ->
+        coverImageUri = uri
+    }
+    
+    val profileImagePicker = rememberImagePickerLauncher { uri ->
+        profileImageUri = uri
+    }
     
     Scaffold(
         topBar = {
@@ -39,7 +51,7 @@ fun UserProfileScreen(
                             Icon(
                                 Icons.Default.ArrowBack,
                                 contentDescription = "Back",
-                                tint = Color.White
+                                tint = Color(0xFF2196F3)
                             )
                         }
                         Spacer(modifier = Modifier.weight(1f))
@@ -47,7 +59,7 @@ fun UserProfileScreen(
                             Icon(
                                 Icons.Default.Search,
                                 contentDescription = "Search",
-                                tint = Color.White
+                                tint = Color(0xFF2196F3)
                             )
                         }
                     }
@@ -69,20 +81,29 @@ fun UserProfileScreen(
         ) {
             // Cover photo area
             Box(modifier = Modifier.fillMaxWidth()) {
-                // Cover photo placeholder - reddish-orange leaves
+                // Cover photo
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(200.dp)
-                        .background(
-                            Color(0xFFE67E22), // Orange background
-                            shape = RoundedCornerShape(bottomStart = 20.dp, bottomEnd = 20.dp)
+                        .clip(RoundedCornerShape(bottomStart = 20.dp, bottomEnd = 20.dp))
+                        .background(Color(0xFFE67E22))
+                        .clickable { coverImagePicker.launch("image/*") },
+                    contentAlignment = Alignment.Center
+                ) {
+                    coverImageUri?.let { uri ->
+                        AsyncImage(
+                            model = uri,
+                            contentDescription = "Cover photo",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
                         )
-                )
+                    }
+                }
                 
                 // Camera icon on cover photo
                 IconButton(
-                    onClick = { /* Edit cover photo */ },
+                    onClick = { coverImagePicker.launch("image/*") },
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .padding(8.dp)
@@ -119,10 +140,18 @@ fun UserProfileScreen(
                             modifier = Modifier
                                 .matchParentSize()
                                 .clip(CircleShape)
-                                .background(Color(0xFFB39DDB)),
+                                .background(Color(0xFFB39DDB))
+                                .clickable { profileImagePicker.launch("image/*") },
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(
+                            profileImageUri?.let { uri ->
+                                AsyncImage(
+                                    model = uri,
+                                    contentDescription = "Profile photo",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } ?: Text(
                                 text = userName.split(" ").map { it.firstOrNull() ?: "" }.joinToString("").uppercase(),
                                 color = Color.White,
                                 style = MaterialTheme.typography.displaySmall,
@@ -132,7 +161,7 @@ fun UserProfileScreen(
                         
                         // Camera icon on profile picture
                         IconButton(
-                            onClick = { /* Edit profile photo */ },
+                            onClick = { profileImagePicker.launch("image/*") },
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
                                 .size(32.dp)
@@ -185,15 +214,15 @@ fun UserProfileScreen(
                 
                 Spacer(modifier = Modifier.height(24.dp))
                 
-                // Action buttons
-                Row(
+                // Action buttons - Vertical layout
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     // Add to story button
                     Button(
                         onClick = { /* Add to story */ },
-                        modifier = Modifier.weight(2f),
+                        modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = Color(0xFF2196F3)
                         )
@@ -205,67 +234,31 @@ fun UserProfileScreen(
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Thêm vào tin")
+                        Text(
+                            "Thêm vào tin",
+                            color = Color.White
+                        )
                     }
                     
                     // Edit profile button
                     OutlinedButton(
                         onClick = { /* Edit profile */ },
-                        modifier = Modifier.weight(2f)
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = Color(0xFFF5F5F5)
+                        )
                     ) {
                         Icon(
                             Icons.Default.Edit,
                             contentDescription = null,
-                            tint = Color(0xFF2196F3),
+                            tint = Color.Black,
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            "Chỉnh sửa",
-                            color = Color(0xFF2196F3),
-                            style = MaterialTheme.typography.bodySmall
+                            "Chỉnh sửa trang cá nhân",
+                            color = Color.Black
                         )
-                    }
-                    
-                    // More options button
-                    OutlinedButton(
-                        onClick = { /* More options */ },
-                        modifier = Modifier.width(48.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.MoreVert,
-                            contentDescription = null,
-                            tint = Color(0xFF2196F3),
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-                
-                Spacer(modifier = Modifier.height(24.dp))
-                
-                // Navigation tabs
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    val tabs = listOf("Bài viết", "Ảnh", "Reels")
-                    tabs.forEachIndexed { index, tab ->
-                        Button(
-                            onClick = { selectedTab = index },
-                            modifier = Modifier.weight(1f),
-                            colors = if (selectedTab == index) {
-                                ButtonDefaults.buttonColors(containerColor = Color(0xFF2196F3))
-                            } else {
-                                ButtonDefaults.buttonColors(containerColor = Color.Transparent)
-                            },
-                            elevation = null
-                        ) {
-                            Text(
-                                text = tab,
-                                color = if (selectedTab == index) Color.White else Color.Gray,
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                        }
                     }
                 }
                 

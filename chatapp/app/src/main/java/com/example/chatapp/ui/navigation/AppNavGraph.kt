@@ -11,6 +11,7 @@ import com.example.chatapp.ui.home.FriendsListScreen
 import com.example.chatapp.ui.home.HomeScreen
 import com.example.chatapp.ui.login.LoginScreen
 import com.example.chatapp.ui.profile.UserProfileScreen
+import com.example.chatapp.ui.settings.SettingsScreen
 import com.example.chatapp.viewmodel.AuthViewModel
 
 @Composable
@@ -80,6 +81,11 @@ fun AppNavGraph(
             val username = backStackEntry.arguments?.getString("username") ?: "chính.thannhan.50"
             UserProfileScreen(
                 username = username,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(NavRoutes.Settings.route) {
+            SettingsScreen(
                 onBack = { navController.popBackStack() }
             )
         }

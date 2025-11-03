@@ -80,6 +80,7 @@ fun MenuScreen(navController: NavController? = null, onLogout: () -> Unit) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .clickable { navController?.navigate(NavRoutes.Settings.route) }
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {

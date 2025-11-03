@@ -17,8 +17,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -66,18 +67,21 @@ fun HomeScreen(navController: NavController? = null, onLogout: () -> Unit) {
                     KeyboardDismissWrapper(modifier = Modifier.fillMaxSize()) {
                         Column(modifier = Modifier.fillMaxSize()) {
                             // Search TextField (only in CHATS)
-                            TextField(
+                            OutlinedTextField(
                                 value = query,
                                 onValueChange = { query = it },
                                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                                placeholder = { Text("Hỏi Meta AI hoặc tìm kiếm") },
+                                placeholder = { Text("Tìm kiếm") },
                                 singleLine = true,
                                 modifier = Modifier
                                     .padding(horizontal = 16.dp, vertical = 12.dp)
                                     .fillMaxWidth(),
-                                colors = TextFieldDefaults.colors(
-                                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                                    focusedContainerColor = MaterialTheme.colorScheme.surface
+                                shape = RoundedCornerShape(24.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    unfocusedContainerColor = Color.LightGray,
+                                    focusedContainerColor = Color.LightGray,
+                                    unfocusedBorderColor = Color.Transparent,
+                                    focusedBorderColor = Color.Transparent
                                 )
                             )
 

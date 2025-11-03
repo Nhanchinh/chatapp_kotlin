@@ -55,6 +55,8 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     // DataStore for storing auth state
     implementation(libs.androidx.datastore.preferences)
+    // Coil for image loading
+    implementation("io.coil-kt:coil-compose:2.4.0")
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
