@@ -10,6 +10,7 @@ import com.example.chatapp.ui.home.FriendRequestScreen
 import com.example.chatapp.ui.home.FriendsListScreen
 import com.example.chatapp.ui.home.HomeScreen
 import com.example.chatapp.ui.login.LoginScreen
+import com.example.chatapp.ui.profile.UserProfileScreen
 import com.example.chatapp.viewmodel.AuthViewModel
 
 @Composable
@@ -73,6 +74,13 @@ fun AppNavGraph(
                 onMessageClick = { friendName ->
                     navController.navigate("chat/$friendName")
                 }
+            )
+        }
+        composable(NavRoutes.UserProfile.route) { backStackEntry ->
+            val username = backStackEntry.arguments?.getString("username") ?: "chính.thannhan.50"
+            UserProfileScreen(
+                username = username,
+                onBack = { navController.popBackStack() }
             )
         }
     }

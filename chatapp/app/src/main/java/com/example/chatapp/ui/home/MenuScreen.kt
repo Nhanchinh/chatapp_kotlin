@@ -41,6 +41,7 @@ fun MenuScreen(navController: NavController? = null, onLogout: () -> Unit) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .clickable { navController?.navigate("profile/chính.thannhan.50") }
                     .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {

@@ -7,6 +7,7 @@ sealed class NavRoutes(val route: String) {
     data object ContactInfo : NavRoutes("contactinfo/{contactName}")
     data object FriendRequest : NavRoutes("friendrequest")
     data object FriendsList : NavRoutes("friendslist")
+    data object UserProfile : NavRoutes("profile/{username}")
 }
 
 

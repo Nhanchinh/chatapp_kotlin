@@ -1,6 +1,7 @@
 package com.example.chatapp.ui.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -20,8 +21,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun StoryAvatar(name: String, online: Boolean, modifier: Modifier = Modifier) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+fun StoryAvatar(name: String, online: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit = {}) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.clickable(onClick = onClick)
+    ) {
         val ring = Brush.linearGradient(listOf(Color(0xFF42A5F5), Color(0xFF7E57C2)))
         Box(
             modifier = modifier

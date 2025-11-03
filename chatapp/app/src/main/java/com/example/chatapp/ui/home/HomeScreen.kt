@@ -91,7 +91,13 @@ fun HomeScreen(navController: NavController? = null, onLogout: () -> Unit) {
                             ) {
                                 val names = listOf("Bạn", "Trung", "Quyền", "Gia Bảo", "Minh")
                                 names.forEachIndexed { index, n ->
-                                    StoryAvatar(name = n, online = index % 2 == 0)
+                                    StoryAvatar(
+                                        name = n, 
+                                        online = index % 2 == 0,
+                                        onClick = {
+                                            navController?.navigate("chat/$n")
+                                        }
+                                    )
                                 }
                             }
 
