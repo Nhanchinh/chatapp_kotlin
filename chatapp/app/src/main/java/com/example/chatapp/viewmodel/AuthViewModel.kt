@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.chatapp.data.local.AuthManager
+import com.example.chatapp.data.repository.AuthRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,6 +19,7 @@ data class AuthState(
 
 class AuthViewModel(application: Application) : AndroidViewModel(application) {
     private val authManager = AuthManager(application)
+    private val repository = AuthRepository(application)
 
     private val _authState = MutableStateFlow(AuthState())
     val authState: StateFlow<AuthState> = _authState.asStateFlow()
@@ -92,10 +94,40 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Login functions
-    fun performLogin(username: String, password: String): Boolean {
-        // Fixed credentials check
-        return username == "admin" && password == "123456"
+    // Network-based auth
+    suspend fun loginWithNetwork(username: String, password: String): Result<Unit> {
+        _authState.value = _authState.value.copy(isLoading = true)
+        return try {
+            val result = repository.login(username, password)
+            if (result.isSuccess) {
+                val token = authManager.getAccessTokenOnce()
+                _authState.value = AuthState(
+                    isLoggedIn = true,
+                    accessToken = token,
+                    isLoading = false,
+                    isInitialized = true
+                )
+                Result.success(Unit)
+            } else {
+                _authState.value = _authState.value.copy(isLoading = false)
+                Result.failure(result.exceptionOrNull() ?: Exception("Login failed"))
+            }
+        } catch (e: Exception) {
+            _authState.value = _authState.value.copy(isLoading = false)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun registerAccount(email: String, password: String, fullName: String): Result<Unit> {
+        _authState.value = _authState.value.copy(isLoading = true)
+        return try {
+            val result = repository.register(email, password, fullName)
+            _authState.value = _authState.value.copy(isLoading = false)
+            result
+        } catch (e: Exception) {
+            _authState.value = _authState.value.copy(isLoading = false)
+            Result.failure(e)
+        }
     }
 }
 

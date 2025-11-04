@@ -1,13 +1,17 @@
 package com.example.chatapp.viewmodel
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 data class LoginUiState(
     val username: String = "",
     val password: String = "",
+    val fullName: String = "",
+    val isRegisterMode: Boolean = false,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val isLoggedIn: Boolean = false
@@ -27,6 +31,17 @@ class LoginViewModel(
         _uiState.value = _uiState.value.copy(password = value, errorMessage = null)
     }
 
+    fun onFullNameChange(value: String) {
+        _uiState.value = _uiState.value.copy(fullName = value, errorMessage = null)
+    }
+
+    fun toggleMode() {
+        _uiState.value = _uiState.value.copy(
+            isRegisterMode = !_uiState.value.isRegisterMode,
+            errorMessage = null
+        )
+    }
+
     fun login() {
         val current = _uiState.value
         if (current.username.isBlank() || current.password.isBlank()) {
@@ -34,21 +49,43 @@ class LoginViewModel(
             return
         }
         _uiState.value = current.copy(isLoading = true, errorMessage = null)
+        viewModelScope.launch {
+            val result = authViewModel.loginWithNetwork(current.username, current.password)
+            if (result.isSuccess) {
+                _uiState.value = _uiState.value.copy(isLoading = false, isLoggedIn = true)
+            } else {
+                val message = result.exceptionOrNull()?.localizedMessage ?: "Đăng nhập thất bại"
+                _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = message)
+            }
+        }
+    }
 
-        // Fixed credentials check
-        val isValid = current.username == "admin" && current.password == "123456"
-        
-        if (isValid) {
-            // Save token and login state
-            // Generate a fake access token (fixed for now)
-            val fakeAccessToken = "fake_access_token_${System.currentTimeMillis()}"
-            // Token expiry set to 7 days from now
-            val expiryTime = System.currentTimeMillis() + (7 * 24 * 60 * 60 * 1000)
-            
-            authViewModel.login(fakeAccessToken, expiryTime)
-            _uiState.value = current.copy(isLoading = false, isLoggedIn = true)
-        } else {
-            _uiState.value = current.copy(isLoading = false, errorMessage = "Sai tài khoản hoặc mật khẩu")
+    fun register() {
+        val current = _uiState.value
+        if (current.username.isBlank() || current.password.isBlank() || current.fullName.isBlank()) {
+            _uiState.value = current.copy(errorMessage = "Vui lòng nhập đầy đủ thông tin")
+            return
+        }
+        _uiState.value = current.copy(isLoading = true, errorMessage = null)
+        viewModelScope.launch {
+            val result = authViewModel.registerAccount(
+                email = current.username,
+                password = current.password,
+                fullName = current.fullName
+            )
+            if (result.isSuccess) {
+                // Auto login after successful register
+                val loginResult = authViewModel.loginWithNetwork(current.username, current.password)
+                if (loginResult.isSuccess) {
+                    _uiState.value = _uiState.value.copy(isLoading = false, isLoggedIn = true)
+                } else {
+                    val message = loginResult.exceptionOrNull()?.localizedMessage ?: "Đăng nhập sau đăng ký thất bại"
+                    _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = message)
+                }
+            } else {
+                val message = result.exceptionOrNull()?.localizedMessage ?: "Đăng ký thất bại"
+                _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = message)
+            }
         }
     }
 }
