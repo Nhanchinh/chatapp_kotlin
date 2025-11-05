@@ -5,7 +5,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.chatapp.data.local.AuthManager
 import com.example.chatapp.data.repository.AuthRepository
-import com.example.chatapp.data.repository.AuthRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,7 +27,6 @@ data class AuthState(
 
 class AuthViewModel(application: Application) : AndroidViewModel(application) {
     private val authManager = AuthManager(application)
-    private val repository = AuthRepository(application)
     private val repository = AuthRepository(application)
 
     private val _authState = MutableStateFlow(AuthState())
