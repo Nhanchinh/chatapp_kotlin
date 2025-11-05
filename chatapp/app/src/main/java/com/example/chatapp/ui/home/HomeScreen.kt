@@ -40,10 +40,11 @@ import androidx.compose.material.icons.filled.Search
 import androidx.navigation.NavController
 import com.example.chatapp.ui.common.KeyboardDismissWrapper
 import com.example.chatapp.ui.navigation.NavRoutes
+import com.example.chatapp.viewmodel.AuthViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(navController: NavController? = null, onLogout: () -> Unit) {
+fun HomeScreen(navController: NavController? = null, authViewModel: AuthViewModel, onLogout: () -> Unit) {
     val chats = listOf(
         Triple("Quang Nguyễn", "Bạn: v chịu", "16:34"),
         Triple("Nguyễn Đăng Nam", "😄😄😄", "11:09"),
@@ -131,7 +132,7 @@ fun HomeScreen(navController: NavController? = null, onLogout: () -> Unit) {
                     NewsScreen()
                 }
                 HomeTab.MENU -> {
-                    MenuScreen(navController = navController, onLogout = onLogout)
+                    MenuScreen(navController = navController, authViewModel = authViewModel, onLogout = onLogout)
                 }
             }
         }

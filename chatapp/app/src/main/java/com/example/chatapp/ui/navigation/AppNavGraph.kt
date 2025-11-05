@@ -38,6 +38,7 @@ fun AppNavGraph(
         composable(NavRoutes.Home.route) {
             HomeScreen(
                 navController = navController,
+                authViewModel = authViewModel,
                 onLogout = {
                     authViewModel.logout()
                     navController.navigate(NavRoutes.Login.route) {
@@ -78,9 +79,9 @@ fun AppNavGraph(
             )
         }
         composable(NavRoutes.UserProfile.route) { backStackEntry ->
-            val username = backStackEntry.arguments?.getString("username") ?: "chính.thannhan.50"
+            // username arg not used; screen shows logged-in user from AuthViewModel
             UserProfileScreen(
-                username = username,
+                authViewModel = authViewModel,
                 onBack = { navController.popBackStack() }
             )
         }

@@ -8,6 +8,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -15,10 +17,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.example.chatapp.ui.navigation.NavRoutes
+import com.example.chatapp.viewmodel.AuthViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MenuScreen(navController: NavController? = null, onLogout: () -> Unit) {
+fun MenuScreen(navController: NavController? = null, authViewModel: AuthViewModel, onLogout: () -> Unit) {
+    val authState by authViewModel.authState.collectAsState()
     Scaffold(
         topBar = {
             TopAppBar(
@@ -41,7 +45,10 @@ fun MenuScreen(navController: NavController? = null, onLogout: () -> Unit) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { navController?.navigate("profile/chính.thannhan.50") }
+                    .clickable {
+                        val usernamePath = authState.userEmail ?: authState.userId ?: "me"
+                        navController?.navigate("profile/$usernamePath")
+                    }
                     .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -53,7 +60,12 @@ fun MenuScreen(navController: NavController? = null, onLogout: () -> Unit) {
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "CT",
+                        text = (authState.userFullName ?: authState.userEmail ?: "?")
+                            .split(" ")
+                            .take(2)
+                            .mapNotNull { it.firstOrNull()?.toString() }
+                            .joinToString("")
+                            .uppercase().ifEmpty { "?" },
                         color = Color.White,
                         style = MaterialTheme.typography.titleLarge
                     )
@@ -61,11 +73,11 @@ fun MenuScreen(navController: NavController? = null, onLogout: () -> Unit) {
                 Spacer(modifier = Modifier.width(12.dp))
                 Column {
                     Text(
-                        text = "Chính Thân",
+                        text = authState.userFullName ?: authState.userEmail ?: "Người dùng",
                         style = MaterialTheme.typography.titleMedium
                     )
                     Text(
-                        text = "Chuyển trang cá nhân - @chính.thannhan.50",
+                        text = "Chuyển trang cá nhân - @" + (authState.userEmail ?: authState.userId ?: "me"),
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.Gray
                     )
