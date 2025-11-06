@@ -23,55 +23,37 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.chatapp.data.model.FriendRequest
+import com.example.chatapp.data.remote.ApiClient
+import com.example.chatapp.data.local.AuthManager
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FriendRequestScreen(onBack: () -> Unit = {}) {
-    // Fake friend requests data
-    var friendRequests by remember {
-        mutableStateOf(
-            listOf(
+    var friendRequests by remember { mutableStateOf(listOf<FriendRequest>()) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        try {
+            val auth = AuthManager(context)
+            val token = auth.getAccessTokenOnce()
+            val bearer = token?.let { "Bearer $it" } ?: ""
+            val resp = ApiClient.apiService.getFriendRequests(bearer)
+            friendRequests = resp.requests.map { r ->
+                val displayName = r.requester?.fullName ?: r.requester?.email ?: (r.fromUser ?: "")
                 FriendRequest(
-                    id = "1",
-                    name = "Ha Hoang",
-                    mutualFriends = 1,
-                    timeAgo = "8 tuần",
-                    avatarColor = 0xFF4CAF50
-                ),
-                FriendRequest(
-                    id = "2",
-                    name = "Nguyễn Quang Thiên",
-                    timeAgo = "2 tuần",
-                    avatarColor = 0xFF9E9E9E
-                ),
-                FriendRequest(
-                    id = "3",
-                    name = "Dung Thân",
-                    mutualFriends = 1,
-                    timeAgo = "47 tuần",
-                    avatarColor = 0xFFFF9800
-                ),
-                FriendRequest(
-                    id = "4",
-                    name = "Quý Phùng",
-                    mutualFriends = 1,
-                    timeAgo = "2 năm",
-                    avatarColor = 0xFFE91E63
-                ),
-                FriendRequest(
-                    id = "5",
-                    name = "Khánh Vy",
-                    timeAgo = "3 năm",
-                    avatarColor = 0xFF2196F3
-                ),
-                FriendRequest(
-                    id = "6",
-                    name = "Đức Huy",
-                    timeAgo = "1 năm",
-                    avatarColor = 0xFF9E9E9E
+                    id = r.fromUser ?: r.id ?: "",
+                    name = displayName,
+                    timeAgo = r.createdAt ?: ""
                 )
-            )
-        )
+            }
+        } catch (_: Exception) {
+            friendRequests = emptyList()
+        }
     }
 
     Scaffold(
@@ -128,12 +110,26 @@ fun FriendRequestScreen(onBack: () -> Unit = {}) {
                 FriendRequestItem(
                     request = request,
                     onAccept = {
-                        // Remove from list when accepted
-                        friendRequests = friendRequests.filter { it.id != request.id }
+                        scope.launch {
+                            try {
+                                val auth = AuthManager(context)
+                                val token = auth.getAccessTokenOnce()
+                                val bearer = token?.let { "Bearer $it" } ?: ""
+                                ApiClient.apiService.acceptFriendRequest(bearer, fromUserId = request.id)
+                                friendRequests = friendRequests.filter { it.id != request.id }
+                            } catch (_: Exception) {}
+                        }
                     },
                     onDelete = {
-                        // Remove from list when deleted
-                        friendRequests = friendRequests.filter { it.id != request.id }
+                        scope.launch {
+                            try {
+                                val auth = AuthManager(context)
+                                val token = auth.getAccessTokenOnce()
+                                val bearer = token?.let { "Bearer $it" } ?: ""
+                                ApiClient.apiService.cancelOrDeclineFriendRequest(bearer, userId = request.id)
+                                friendRequests = friendRequests.filter { it.id != request.id }
+                            } catch (_: Exception) {}
+                        }
                     }
                 )
             }

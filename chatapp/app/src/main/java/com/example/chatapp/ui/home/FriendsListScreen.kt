@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -17,6 +18,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -25,6 +28,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.chatapp.data.model.Friend
+import com.example.chatapp.data.remote.ApiClient
+import com.example.chatapp.data.remote.model.UserDto
+import com.example.chatapp.data.local.AuthManager
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+ 
+private enum class SearchMode { FRIENDS, USERS }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -32,78 +42,39 @@ fun FriendsListScreen(
     onBack: () -> Unit = {},
     onMessageClick: (String) -> Unit = {}
 ) {
-    // Fake friends data
-    var friends by remember {
-        mutableStateOf(
-            listOf(
-                Friend(
-                    id = "1",
-                    name = "Hoang Nguyen",
-                    mutualFriends = 29,
-                    isOnline = true,
-                    avatarColor = 0xFF4CAF50
-                ),
-                Friend(
-                    id = "2",
-                    name = "Nguyễn Đăng Nam",
-                    mutualFriends = 47,
-                    lastSeen = "53 phút",
-                    avatarColor = 0xFF2196F3
-                ),
-                Friend(
-                    id = "3",
-                    name = "Thân Đức Trung",
-                    mutualFriends = 2,
-                    lastSeen = "27 phút",
-                    avatarColor = 0xFF9E9E9E
-                ),
-                Friend(
-                    id = "4",
-                    name = "Quang Nguyễn",
-                    mutualFriends = 44,
-                    lastSeen = "25 phút",
-                    avatarColor = 0xFF607D8B
-                ),
-                Friend(
-                    id = "5",
-                    name = "Hòa Thân",
-                    mutualFriends = 5,
-                    lastSeen = "3 giờ",
-                    avatarColor = 0xFFFF9800
-                ),
-                Friend(
-                    id = "6",
-                    name = "Bùi Đức Trọng",
-                    mutualFriends = 40,
-                    lastSeen = "25 phút",
-                    avatarColor = 0xFFE91E63
-                ),
-                Friend(
-                    id = "7",
-                    name = "Nguyễn Mạnh Quyên",
-                    mutualFriends = 42,
-                    isOnline = true,
-                    avatarColor = 0xFF795548
-                ),
-                Friend(
-                    id = "8",
-                    name = "Nguyên Nam",
-                    mutualFriends = 42,
-                    lastSeen = "20 phút",
-                    avatarColor = 0xFF9C27B0
-                ),
-                Friend(
-                    id = "9",
-                    name = "Nguyen The Anh",
-                    mutualFriends = 42,
-                    lastSeen = "55 phút",
-                    avatarColor = 0xFFFF5722
-                )
-            )
-        )
-    }
+    // Friends loaded from API
+    var friends by remember { mutableStateOf(listOf<Friend>()) }
 
     var searchQuery by remember { mutableStateOf("") }
+    var userResults by remember { mutableStateOf(listOf<UserDto>()) }
+    var isSearchingUsers by remember { mutableStateOf(false) }
+    var addingUserId by remember { mutableStateOf<String?>(null) }
+    var invitedIds by remember { mutableStateOf(setOf<String>()) }
+    var unfriendingId by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    var searchMode by remember { mutableStateOf(SearchMode.FRIENDS) }
+    var modeMenuExpanded by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        // Load friends from backend
+        try {
+            val auth = AuthManager(context)
+            val token = auth.getAccessTokenOnce()
+            val bearer = token?.let { "Bearer $it" } ?: ""
+            val resp = ApiClient.apiService.getFriendsList(bearer)
+            friends = resp.friends.map { u ->
+                Friend(
+                    id = u.id ?: "",
+                    name = u.fullName ?: (u.email ?: ""),
+                    mutualFriends = u.friendCount ?: 0
+                )
+            }
+        } catch (_: Exception) {
+            friends = emptyList()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -132,40 +103,150 @@ fun FriendsListScreen(
                 .padding(paddingValues)
                 .background(Color.White)
         ) {
-            // Search bar
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
+            // Unified Search bar with mode switch (Friends vs Users)
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
-                leadingIcon = {
-                    Icon(Icons.Default.Search, contentDescription = null)
-                },
-                placeholder = { Text("Tìm kiếm bạn bè") },
-                shape = RoundedCornerShape(24.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    unfocusedBorderColor = Color.Gray,
-                    focusedBorderColor = Color(0xFF2196F3)
-                ),
-                singleLine = true
-            )
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 8.dp),
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    placeholder = { Text(if (searchMode == SearchMode.FRIENDS) "Tìm bạn bè" else "Tìm người dùng") },
+                    trailingIcon = {
+                        IconButton(
+                            enabled = (searchMode == SearchMode.USERS) && !isSearchingUsers && searchQuery.isNotBlank(),
+                            onClick = {
+                                scope.launch {
+                                    isSearchingUsers = true
+                                    try {
+                                        val auth = AuthManager(context)
+                                        val token = auth.getAccessTokenOnce()
+                                        val bearer = token?.let { "Bearer $it" } ?: ""
+                                        val resp = ApiClient.apiService.searchUsers(
+                                            token = bearer,
+                                            query = searchQuery,
+                                            limit = 20,
+                                            prefix = false
+                                        )
+                                        userResults = resp.items
+                                    } catch (e: Exception) {
+                                        userResults = emptyList()
+                                    } finally {
+                                        isSearchingUsers = false
+                                    }
+                                }
+                            }
+                        ) {
+                            if (isSearchingUsers) {
+                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(Icons.Default.Search, contentDescription = "Tìm")
+                            }
+                        }
+                    },
+                    shape = RoundedCornerShape(24.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedBorderColor = Color.Gray,
+                        focusedBorderColor = Color(0xFF2196F3)
+                    ),
+                    singleLine = true,
+                    maxLines = 1
+                )
+
+                // Mode dropdown
+                Box {
+                    OutlinedButton(onClick = { modeMenuExpanded = true }) {
+                        Text(if (searchMode == SearchMode.FRIENDS) "Bạn bè" else "Người dùng")
+                    }
+                    DropdownMenu(expanded = modeMenuExpanded, onDismissRequest = { modeMenuExpanded = false }) {
+                        DropdownMenuItem(text = { Text("Bạn bè") }, onClick = {
+                            searchMode = SearchMode.FRIENDS
+                            modeMenuExpanded = false
+                            userResults = emptyList()
+                        })
+                        DropdownMenuItem(text = { Text("Người dùng") }, onClick = {
+                            searchMode = SearchMode.USERS
+                            modeMenuExpanded = false
+                            // keep current searchQuery; user can press Tìm to fetch
+                        })
+                    }
+                }
+            }
 
             // Friends list
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
             ) {
+                // User search results section (only show in Users mode)
+                if (searchMode == SearchMode.USERS && userResults.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "Kết quả người dùng",
+                            modifier = Modifier.padding(16.dp),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    items(userResults) { u ->
+                        UserSearchItem(
+                            user = u,
+                            isAdding = addingUserId == (u.id ?: ""),
+                            invited = invitedIds.contains(u.id ?: ""),
+                            onAddClick = add@{
+                                val targetId = u.id ?: return@add
+                                scope.launch {
+                                    addingUserId = targetId
+                                    try {
+                                        val auth = AuthManager(context)
+                                        val token = auth.getAccessTokenOnce()
+                                        val bearer = token?.let { "Bearer $it" } ?: ""
+                                        val resp = ApiClient.apiService.sendFriendRequest(
+                                            token = bearer,
+                                            targetUserId = targetId
+                                        )
+                                        invitedIds = invitedIds + targetId
+                                    } catch (e: Exception) {
+                                        // ignore for now; could show toast/snackbar
+                                    } finally {
+                                        addingUserId = null
+                                    }
+                                }
+                            }
+                        )
+                    }
+                    item { Divider(modifier = Modifier.padding(vertical = 8.dp)) }
+                }
                 items(friends.filter {
-                    searchQuery.isBlank() || it.name.contains(
-                        searchQuery,
-                        ignoreCase = true
-                    )
+                    // Filter friends only in Friends mode; otherwise show all friends below
+                    searchMode != SearchMode.FRIENDS || searchQuery.isBlank() || it.name.contains(searchQuery, ignoreCase = true)
                 }) { friend ->
                     FriendListItem(
                         friend = friend,
                         onMessageClick = { onMessageClick(friend.name) },
-                        onMoreClick = { /* Handle more options */ }
+                        onMoreClick = { /* unused */ },
+                        onUnfriend = {
+                            unfriendingId = friend.id
+                            scope.launch {
+                                try {
+                                    val auth = AuthManager(context)
+                                    val token = auth.getAccessTokenOnce()
+                                    val bearer = token?.let { "Bearer $it" } ?: ""
+                                    ApiClient.apiService.unfriend(bearer, friendId = friend.id)
+                                    friends = friends.filter { it.id != friend.id }
+                                } catch (_: Exception) {
+                                } finally {
+                                    unfriendingId = null
+                                }
+                            }
+                        },
+                        isUnfriending = unfriendingId == friend.id
                     )
                 }
             }
@@ -177,7 +258,9 @@ fun FriendsListScreen(
 fun FriendListItem(
     friend: Friend,
     onMessageClick: () -> Unit,
-    onMoreClick: () -> Unit
+    onMoreClick: () -> Unit,
+    onUnfriend: () -> Unit,
+    isUnfriending: Boolean = false
 ) {
     Row(
         modifier = Modifier
@@ -279,17 +362,67 @@ fun FriendListItem(
             }
         }
 
-        // More options button
-        IconButton(
-            onClick = onMoreClick,
-            modifier = Modifier.size(48.dp)
+        // More options with dropdown
+        var expanded by remember { mutableStateOf(false) }
+        Box {
+            IconButton(
+                onClick = { expanded = true },
+                modifier = Modifier.size(48.dp)
+            ) {
+                Icon(
+                    Icons.Default.MoreVert,
+                    contentDescription = "More options",
+                    tint = Color.Gray
+                )
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                DropdownMenuItem(
+                    text = { Text(if (isUnfriending) "Đang hủy..." else "Hủy kết bạn") },
+                    leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
+                    enabled = !isUnfriending,
+                    onClick = {
+                        expanded = false
+                        onUnfriend()
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun UserSearchItem(user: UserDto, isAdding: Boolean = false, invited: Boolean = false, onAddClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(Color(0xFF90CAF9)),
+            contentAlignment = Alignment.Center
         ) {
-            Icon(
-                Icons.Default.MoreVert,
-                contentDescription = "More options",
-                tint = Color.Gray
+            Text(
+                text = (user.fullName ?: user.email ?: "?").firstOrNull()?.uppercase() ?: "?",
+                color = Color.White,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Bold
             )
         }
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = user.fullName ?: "(No name)", fontWeight = FontWeight.Bold)
+            Text(text = user.email ?: "", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+        }
+        val btnText = when {
+            invited -> "Đã gửi"
+            isAdding -> "..."
+            else -> "Thêm"
+        }
+        TextButton(onClick = onAddClick, enabled = !isAdding && !invited) { Text(btnText) }
     }
 }
 

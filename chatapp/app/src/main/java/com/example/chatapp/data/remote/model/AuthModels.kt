@@ -39,4 +39,29 @@ data class ProfileUpdateRequest(
     @Json(name = "birth_year") val birthYear: Int? = null
 )
 
+data class SearchUsersResponse(
+    val items: List<UserDto> = emptyList()
+)
+
+data class FriendActionResponse(
+    val msg: String? = null
+)
+
+data class FriendsListResponse(
+    val friends: List<UserDto> = emptyList()
+)
+
+data class FriendRequestDto(
+    val id: String?,
+    @Json(name = "from_user") val fromUser: String?,
+    @Json(name = "to_user") val toUser: String?,
+    val status: String?,
+    @Json(name = "created_at") val createdAt: String?,
+    val requester: UserDto? = null
+)
+
+data class FriendRequestsResponse(
+    val requests: List<FriendRequestDto> = emptyList()
+)
+
 
