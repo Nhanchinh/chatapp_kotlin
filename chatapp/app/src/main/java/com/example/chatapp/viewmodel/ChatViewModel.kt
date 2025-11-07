@@ -154,16 +154,20 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _messagesLoading.value = true
             _messagesError.value = null
+            // Ensure friends map is loaded for name resolution
+            val friends = friendsMap.value
             repository.getMessages(conversationId, limit, cursor).fold(
                 onSuccess = { response ->
                     val me = currentUserId.value
                     _messages.value = response.items.map { dto ->
+                        // Resolve sender name from friends map
+                        val senderDisplayName = friends[dto.senderId] ?: dto.senderId
                         Message(
                             id = dto.id,
                             text = dto.content,
                             timestamp = parseTimestamp(dto.timestamp),
                             isFromMe = dto.senderId == me,
-                            senderName = dto.senderId,
+                            senderName = senderDisplayName,
                             senderId = dto.senderId,
                             receiverId = dto.receiverId,
                             conversationId = dto.conversationId,
@@ -187,13 +191,17 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         val to = _currentContactId.value ?: return
         viewModelScope.launch {
             val clientMessageId = UUID.randomUUID().toString()
+            val me = currentUserId.value ?: ""
+            // Resolve my name from friends map (though it's usually not displayed for own messages)
+            val friends = friendsMap.value
+            val myDisplayName = friends[me] ?: me
             val optimistic = Message(
                 id = "temp_$clientMessageId",
                 text = content,
                 timestamp = System.currentTimeMillis(),
                 isFromMe = true,
-                senderName = currentUserId.value,
-                senderId = currentUserId.value,
+                senderName = myDisplayName,
+                senderId = me,
                 receiverId = to,
                 clientMessageId = clientMessageId,
                 conversationId = _currentConversationId.value
@@ -340,12 +348,15 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         val shouldShowMessage = isInCurrentConversation || isFromCurrentContact || (hasCurrentContact && isNewConversation)
         
         if (shouldShowMessage) {
+            // Resolve sender name from friends map
+            val friends = friendsMap.value
+            val senderDisplayName = friends[event.message.from] ?: event.message.from
             val message = Message(
                 id = ack.messageId.ifEmpty { "temp_${System.currentTimeMillis()}" },
                 text = event.message.content,
                 timestamp = System.currentTimeMillis(),
                 isFromMe = false,
-                senderName = event.message.from,
+                senderName = senderDisplayName,
                 senderId = event.message.from,
                 receiverId = _currentContactId.value ?: me,
                 conversationId = conversationId,
