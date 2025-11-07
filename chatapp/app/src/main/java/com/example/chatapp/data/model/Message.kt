@@ -5,6 +5,12 @@ data class Message(
     val text: String,
     val timestamp: Long,
     val isFromMe: Boolean,
-    val senderName: String? = null
+    val senderName: String? = null,
+    val senderId: String? = null,
+    val receiverId: String? = null,
+    val conversationId: String? = null,
+    val delivered: Boolean = false,
+    val seen: Boolean = false,
+    val clientMessageId: String? = null
 )
 

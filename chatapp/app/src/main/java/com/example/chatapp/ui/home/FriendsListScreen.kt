@@ -40,7 +40,7 @@ private enum class SearchMode { FRIENDS, USERS }
 @Composable
 fun FriendsListScreen(
     onBack: () -> Unit = {},
-    onMessageClick: (String) -> Unit = {}
+    onMessageClick: (String, String) -> Unit = { _, _ -> }
 ) {
     // Friends loaded from API
     var friends by remember { mutableStateOf(listOf<Friend>()) }
@@ -229,7 +229,7 @@ fun FriendsListScreen(
                 }) { friend ->
                     FriendListItem(
                         friend = friend,
-                        onMessageClick = { onMessageClick(friend.name) },
+                        onMessageClick = { onMessageClick(friend.id, friend.name) },
                         onMoreClick = { /* unused */ },
                         onUnfriend = {
                             unfriendingId = friend.id

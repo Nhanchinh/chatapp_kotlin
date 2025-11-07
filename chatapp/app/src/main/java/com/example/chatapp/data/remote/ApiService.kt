@@ -9,6 +9,11 @@ import com.example.chatapp.data.remote.model.SearchUsersResponse
 import com.example.chatapp.data.remote.model.FriendActionResponse
 import com.example.chatapp.data.remote.model.FriendsListResponse
 import com.example.chatapp.data.remote.model.FriendRequestsResponse
+import com.example.chatapp.data.remote.model.ConversationsResponse
+import com.example.chatapp.data.remote.model.MessagesResponse
+import com.example.chatapp.data.remote.model.UnreadMessagesResponse
+import com.example.chatapp.data.remote.model.MarkReadRequest
+import com.example.chatapp.data.remote.model.MarkReadResponse
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.Field
@@ -82,6 +87,34 @@ interface ApiService {
         @Header("Authorization") token: String,
         @Path("friend_id") friendId: String
     ): FriendActionResponse
+
+    // Chat API
+    @GET("conversations")
+    suspend fun getConversations(
+        @Header("Authorization") token: String,
+        @Query("limit") limit: Int = 20,
+        @Query("cursor") cursor: String? = null
+    ): ConversationsResponse
+
+    @GET("conversations/{conversation_id}/messages")
+    suspend fun getMessages(
+        @Header("Authorization") token: String,
+        @Path("conversation_id") conversationId: String,
+        @Query("limit") limit: Int = 50,
+        @Query("cursor") cursor: String? = null
+    ): MessagesResponse
+
+    @GET("messages/unread")
+    suspend fun getUnreadMessages(
+        @Header("Authorization") token: String,
+        @Query("from_user_id") fromUserId: String? = null
+    ): UnreadMessagesResponse
+
+    @POST("messages/mark_read")
+    suspend fun markRead(
+        @Header("Authorization") token: String,
+        @Body body: MarkReadRequest
+    ): MarkReadResponse
 }
 
 

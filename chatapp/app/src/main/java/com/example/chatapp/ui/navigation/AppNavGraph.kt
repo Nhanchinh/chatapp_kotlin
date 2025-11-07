@@ -1,9 +1,11 @@
 package com.example.chatapp.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.navArgument
 import com.example.chatapp.ui.chat.ChatScreen
 import com.example.chatapp.ui.chat.ContactInfoScreen
 import com.example.chatapp.ui.home.FriendRequestScreen
@@ -13,6 +15,7 @@ import com.example.chatapp.ui.login.LoginScreen
 import com.example.chatapp.ui.profile.UserProfileScreen
 import com.example.chatapp.ui.settings.SettingsScreen
 import com.example.chatapp.viewmodel.AuthViewModel
+import com.example.chatapp.viewmodel.ChatViewModel
 
 @Composable
 fun AppNavGraph(
@@ -20,6 +23,8 @@ fun AppNavGraph(
     authViewModel: AuthViewModel,
     isLoggedIn: Boolean
 ) {
+    val chatViewModel: ChatViewModel = viewModel()
+
     NavHost(
         navController = navController,
         startDestination = if (isLoggedIn) NavRoutes.Home.route else NavRoutes.Login.route
@@ -39,6 +44,7 @@ fun AppNavGraph(
             HomeScreen(
                 navController = navController,
                 authViewModel = authViewModel,
+                chatViewModel = chatViewModel,
                 onLogout = {
                     authViewModel.logout()
                     navController.navigate(NavRoutes.Login.route) {
@@ -48,13 +54,27 @@ fun AppNavGraph(
                 }
             )
         }
-        composable(NavRoutes.Chat.route) { backStackEntry ->
-            val contactName = backStackEntry.arguments?.getString("contactName") ?: "Unknown"
+        composable(
+            route = NavRoutes.Chat.route,
+            arguments = listOf(
+                navArgument("contactId") {},
+                navArgument("contactName") { defaultValue = "" },
+                navArgument("conversationId") { defaultValue = "" }
+            )
+        ) { backStackEntry ->
+            val contactId = backStackEntry.arguments?.getString("contactId") ?: return@composable
+            val contactName = backStackEntry.arguments?.getString("contactName").orEmpty().ifBlank { null }
+            val conversationId = backStackEntry.arguments?.getString("conversationId").orEmpty().ifBlank { null }
+
             ChatScreen(
+                chatViewModel = chatViewModel,
+                contactId = contactId,
                 contactName = contactName,
+                conversationId = conversationId,
                 onBack = { navController.popBackStack() },
                 onInfoClick = {
-                    navController.navigate("contactinfo/$contactName")
+                    val safeName = contactName ?: contactId
+                    navController.navigate("contactinfo/$safeName")
                 }
             )
         }
@@ -73,13 +93,18 @@ fun AppNavGraph(
         composable(NavRoutes.FriendsList.route) {
             FriendsListScreen(
                 onBack = { navController.popBackStack() },
-                onMessageClick = { friendName ->
-                    navController.navigate("chat/$friendName")
+                onMessageClick = { friendId, friendName ->
+                    navController.navigate(
+                        NavRoutes.Chat.createRoute(
+                            contactId = friendId,
+                            contactName = friendName,
+                            conversationId = null
+                        )
+                    )
                 }
             )
         }
-        composable(NavRoutes.UserProfile.route) { backStackEntry ->
-            // username arg not used; screen shows logged-in user from AuthViewModel
+        composable(NavRoutes.UserProfile.route) {
             UserProfileScreen(
                 authViewModel = authViewModel,
                 onBack = { navController.popBackStack() }

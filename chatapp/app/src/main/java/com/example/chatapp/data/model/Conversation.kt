@@ -6,7 +6,10 @@ data class Conversation(
     val lastMessage: String,
     val lastTime: String,
     val unreadCount: Int = 0,
-    val isOnline: Boolean = false
+    val isOnline: Boolean = false,
+    val participants: List<String> = emptyList(),
+    val lastMessageAt: String? = null,
+    val lastMessagePreview: String? = null
 )
 
 
