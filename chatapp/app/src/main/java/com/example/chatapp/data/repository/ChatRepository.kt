@@ -116,5 +116,15 @@ class ChatRepository(private val context: Context) {
     fun isWebSocketConnected(): Boolean {
         return webSocketClient.isConnected()
     }
+
+    suspend fun getFriendsList(): Result<FriendsListResponse> {
+        return try {
+            val token = authManager.getAccessTokenOnce() ?: return Result.failure(Exception("Not authenticated"))
+            val response = api.getFriendsList("Bearer $token")
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }
 

@@ -35,6 +35,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val _conversationsError = MutableStateFlow<String?>(null)
     val conversationsError: StateFlow<String?> = _conversationsError.asStateFlow()
 
+    private val _friendsMap = MutableStateFlow<Map<String, String>>(emptyMap())
+    private val friendsMap: StateFlow<Map<String, String>> = _friendsMap.asStateFlow()
+
     private val _messages = MutableStateFlow<List<Message>>(emptyList())
     val messages: StateFlow<List<Message>> = _messages.asStateFlow()
 
@@ -68,11 +71,33 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         get() = currentUserId
 
     init {
+        viewModelScope.launch {
+            loadFriendsMap()
+        }
         refreshConversations()
+    }
+
+    private suspend fun loadFriendsMap(): Map<String, String> {
+        return repository.getFriendsList().fold(
+            onSuccess = { response ->
+                val map = response.friends.associate { friend ->
+                    (friend.id ?: "") to (friend.fullName ?: friend.email ?: "Unknown")
+                }
+                _friendsMap.value = map
+                map
+            },
+            onFailure = {
+                // Return current map if load fails
+                friendsMap.value
+            }
+        )
     }
 
     fun refreshConversations() {
         viewModelScope.launch {
+            // Load friends map first to ensure we have names
+            val friends = loadFriendsMap()
+            
             _conversationsLoading.value = true
             _conversationsError.value = null
             repository.getConversations().fold(
@@ -80,9 +105,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     val me = currentUserId.value
                     _conversations.value = response.items.map { dto ->
                         val otherParticipant = dto.participants.firstOrNull { it != me }
+                        val displayName = otherParticipant?.let { friends[it] } ?: otherParticipant ?: "Unknown"
                         Conversation(
                             id = dto.id,
-                            name = otherParticipant ?: "Unknown",
+                            name = displayName,
                             lastMessage = dto.lastMessagePreview.orEmpty(),
                             lastTime = formatTimestamp(dto.lastMessageAt),
                             unreadCount = dto.unreadCounters[me] ?: 0,
