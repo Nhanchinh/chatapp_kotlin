@@ -222,22 +222,47 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun ensureWebSocketConnected(resumeSince: Long? = null) {
-        if (webSocketJob?.isActive == true) return
+        // Cancel existing connection if any
+        webSocketJob?.cancel()
         webSocketJob = viewModelScope.launch {
-            repository.connectWebSocket(resumeSince).collect { handleWebSocketEvent(it) }
+            try {
+                repository.connectWebSocket(resumeSince).collect { handleWebSocketEvent(it) }
+            } catch (e: Exception) {
+                android.util.Log.e("ChatViewModel", "WebSocket connection error", e)
+                _webSocketConnected.value = false
+                // Try to reconnect after delay
+                kotlinx.coroutines.delay(3000)
+                if (_currentContactId.value != null) {
+                    ensureWebSocketConnected()
+                }
+            }
         }
     }
 
     private fun handleWebSocketEvent(event: WebSocketEvent) {
         when (event) {
-            is WebSocketEvent.Connected -> _webSocketConnected.value = true
-            is WebSocketEvent.Closed -> _webSocketConnected.value = false
+            is WebSocketEvent.Connected -> {
+                _webSocketConnected.value = true
+                _messagesError.value = null
+            }
+            is WebSocketEvent.Closed -> {
+                _webSocketConnected.value = false
+            }
             is WebSocketEvent.Closing -> {
                 _webSocketConnected.value = false
             }
             is WebSocketEvent.Error -> {
-                _messagesError.value = event.message
-                _webSocketConnected.value = false
+                // Don't set error as blocking - just log it, WebSocket might still work
+                android.util.Log.e("ChatViewModel", "WebSocket error: ${event.message}")
+                // Try to reconnect if connection is lost
+                if (!_webSocketConnected.value) {
+                    viewModelScope.launch {
+                        kotlinx.coroutines.delay(2000)
+                        if (_currentContactId.value != null) {
+                            ensureWebSocketConnected()
+                        }
+                    }
+                }
             }
             is WebSocketEvent.TypingStarted -> _typingUsers.value = _typingUsers.value + event.userId
             is WebSocketEvent.TypingStopped -> _typingUsers.value = _typingUsers.value - event.userId
@@ -245,7 +270,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             is WebSocketEvent.MessageSeen -> updateMessageStatus(event.messageId) { it.copy(seen = true) }
             is WebSocketEvent.MessageAck -> applyAck(event.ack)
             is WebSocketEvent.NewMessage -> handleIncomingMessage(event)
-            is WebSocketEvent.RawMessage -> { /* ignore */ }
+            is WebSocketEvent.RawMessage -> {
+                // Try to parse raw message as JSON manually
+                android.util.Log.d("ChatViewModel", "Received raw message: ${event.text}")
+            }
         }
     }
 
@@ -267,28 +295,67 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun handleIncomingMessage(event: WebSocketEvent.NewMessage) {
-        val me = currentUserId.value
-        val conversationId = event.message.ack.conversationId
-        val message = Message(
-            id = event.message.ack.messageId,
-            text = event.message.content,
-            timestamp = System.currentTimeMillis(),
-            isFromMe = event.message.from == me,
-            senderName = event.message.from,
-            senderId = event.message.from,
-            receiverId = _currentContactId.value,
-            conversationId = conversationId,
-            clientMessageId = event.message.ack.clientMessageId
-        )
-
-        if (_currentConversationId.value == null && event.message.from == _currentContactId.value) {
-            _currentConversationId.value = conversationId
+        val me = currentUserId.value ?: return
+        val ack = event.message.ack
+        val conversationId = ack.conversationId
+        val isFromMe = event.message.from == me
+        
+        // Don't process if message is from ourselves (we already have it from optimistic update)
+        if (isFromMe) {
+            // Just refresh conversations to update last message
+            refreshConversations()
+            return
         }
+        
+        // Check if this message is for the current conversation
+        val isFromCurrentContact = event.message.from == _currentContactId.value
+        val isInCurrentConversation = conversationId.isNotEmpty() && conversationId == _currentConversationId.value
+        val isNewConversation = _currentConversationId.value == null && isFromCurrentContact
+        val hasCurrentContact = _currentContactId.value != null
+        
+        // Process message if:
+        // 1. It's in the current conversation, OR
+        // 2. It's from the current contact (even if conversationId doesn't match yet), OR
+        // 3. We have a current contact and this is a new conversation from that contact
+        val shouldShowMessage = isInCurrentConversation || isFromCurrentContact || (hasCurrentContact && isNewConversation)
+        
+        if (shouldShowMessage) {
+            val message = Message(
+                id = ack.messageId.ifEmpty { "temp_${System.currentTimeMillis()}" },
+                text = event.message.content,
+                timestamp = System.currentTimeMillis(),
+                isFromMe = false,
+                senderName = event.message.from,
+                senderId = event.message.from,
+                receiverId = _currentContactId.value ?: me,
+                conversationId = conversationId,
+                clientMessageId = ack.clientMessageId
+            )
 
-        if (conversationId == _currentConversationId.value) {
-            _messages.value = _messages.value + message
-            markRead(conversationId = conversationId)
+            // Update conversation ID if we don't have it yet
+            if (_currentConversationId.value == null && conversationId.isNotEmpty()) {
+                _currentConversationId.value = conversationId
+            }
+            
+            // Also update contact ID if we don't have it
+            if (_currentContactId.value == null) {
+                _currentContactId.value = event.message.from
+            }
+
+            // Add message to current chat (check for duplicates)
+            val existingMessageIds = _messages.value.map { it.id }.toSet()
+            if (message.id !in existingMessageIds && 
+                !_messages.value.any { it.clientMessageId == message.clientMessageId && message.clientMessageId != null }) {
+                _messages.value = _messages.value + message
+            }
+            
+            // Mark as read if in current conversation
+            if (conversationId.isNotEmpty()) {
+                markRead(conversationId = conversationId)
+            }
         }
+        
+        // Always refresh conversations to update last message preview
         refreshConversations()
     }
 

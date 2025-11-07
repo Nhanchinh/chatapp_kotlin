@@ -4,6 +4,7 @@ import com.example.chatapp.BuildConfig
 import com.example.chatapp.data.remote.model.WebSocketMessage
 import com.example.chatapp.data.remote.model.WebSocketAckResponse
 import com.example.chatapp.data.remote.model.WebSocketMessageResponse
+import com.example.chatapp.data.remote.model.MessageAck
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.channels.awaitClose
@@ -65,40 +66,85 @@ class WebSocketClient {
 
             override fun onMessage(webSocket: WebSocket, text: String) {
                 try {
-                    // Try to parse as ACK first
-                    val ackAdapter = moshi.adapter(WebSocketAckResponse::class.java)
-                    val ackResponse = ackAdapter.fromJson(text)
-                    if (ackResponse != null) {
-                        trySend(WebSocketEvent.MessageAck(ackResponse.ack))
-                        return
-                    }
-
-                    // Try to parse as message
-                    val messageAdapter = moshi.adapter(WebSocketMessageResponse::class.java)
-                    val messageResponse = messageAdapter.fromJson(text)
-                    if (messageResponse != null) {
-                        trySend(WebSocketEvent.NewMessage(messageResponse))
-                        return
-                    }
-
-                    // Try to parse as generic message (typing, delivered, seen)
+                    // First, try to parse as generic message to check type
                     val genericAdapter = moshi.adapter(WebSocketMessage::class.java)
                     val genericMessage = genericAdapter.fromJson(text)
-                    if (genericMessage != null) {
+                    
+                    if (genericMessage != null && genericMessage.type != null) {
                         when (genericMessage.type) {
-                            "typing_start" -> trySend(WebSocketEvent.TypingStarted(genericMessage.from ?: ""))
-                            "typing_stop" -> trySend(WebSocketEvent.TypingStopped(genericMessage.from ?: ""))
-                            "delivered" -> trySend(WebSocketEvent.MessageDelivered(genericMessage.messageId ?: ""))
-                            "seen" -> trySend(WebSocketEvent.MessageSeen(genericMessage.messageId ?: ""))
-                            else -> trySend(WebSocketEvent.RawMessage(text))
+                            "message" -> {
+                                // Try to parse as WebSocketMessageResponse (has ack)
+                                try {
+                                    val messageAdapter = moshi.adapter(WebSocketMessageResponse::class.java)
+                                    val messageResponse = messageAdapter.fromJson(text)
+                                    if (messageResponse != null) {
+                                        // Ensure ack exists, if not create a fallback
+                                        val finalAck = messageResponse.ack ?: MessageAck(
+                                            messageId = genericMessage.messageId ?: "",
+                                            conversationId = genericMessage.conversationId ?: "",
+                                            clientMessageId = genericMessage.clientMessageId
+                                        )
+                                        val finalMessage = messageResponse.copy(ack = finalAck)
+                                        trySend(WebSocketEvent.NewMessage(finalMessage))
+                                        return
+                                    }
+                                } catch (e: Exception) {
+                                    // If parsing fails, try to create message from generic message
+                                    if (genericMessage.from != null && genericMessage.content != null) {
+                                        // Extract ack from generic message if available
+                                        val ack = genericMessage.ack ?: MessageAck(
+                                            messageId = genericMessage.messageId ?: "",
+                                            conversationId = genericMessage.conversationId ?: "",
+                                            clientMessageId = genericMessage.clientMessageId
+                                        )
+                                        val fallbackMessage = WebSocketMessageResponse(
+                                            type = "message",
+                                            from = genericMessage.from,
+                                            content = genericMessage.content,
+                                            ack = ack
+                                        )
+                                        trySend(WebSocketEvent.NewMessage(fallbackMessage))
+                                        return
+                                    }
+                                }
+                            }
+                            "typing_start" -> {
+                                trySend(WebSocketEvent.TypingStarted(genericMessage.from ?: ""))
+                                return
+                            }
+                            "typing_stop" -> {
+                                trySend(WebSocketEvent.TypingStopped(genericMessage.from ?: ""))
+                                return
+                            }
+                            "delivered" -> {
+                                trySend(WebSocketEvent.MessageDelivered(genericMessage.messageId ?: ""))
+                                return
+                            }
+                            "seen" -> {
+                                trySend(WebSocketEvent.MessageSeen(genericMessage.messageId ?: ""))
+                                return
+                            }
                         }
-                        return
+                    }
+                    
+                    // Try to parse as ACK response (sender receives ack after sending)
+                    try {
+                        val ackAdapter = moshi.adapter(WebSocketAckResponse::class.java)
+                        val ackResponse = ackAdapter.fromJson(text)
+                        if (ackResponse != null && ackResponse.ack != null) {
+                            trySend(WebSocketEvent.MessageAck(ackResponse.ack))
+                            return
+                        }
+                    } catch (e: Exception) {
+                        // Not an ACK response
                     }
 
-                    // Fallback to raw message
+                    // Fallback to raw message if nothing matches
                     trySend(WebSocketEvent.RawMessage(text))
                 } catch (e: Exception) {
-                    trySend(WebSocketEvent.Error(e.message ?: "Failed to parse message"))
+                    // Log error but don't block - send as raw message
+                    trySend(WebSocketEvent.Error("Parse error: ${e.message}"))
+                    trySend(WebSocketEvent.RawMessage(text))
                 }
             }
 
