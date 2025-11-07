@@ -121,7 +121,10 @@ class WebSocketClient {
                                 return
                             }
                             "seen" -> {
-                                trySend(WebSocketEvent.MessageSeen(genericMessage.messageId ?: ""))
+                                trySend(WebSocketEvent.MessageSeen(
+                                    messageId = genericMessage.messageId ?: "",
+                                    conversationId = genericMessage.conversationId
+                                ))
                                 return
                             }
                         }
@@ -304,7 +307,7 @@ sealed class WebSocketEvent {
     data class TypingStarted(val userId: String) : WebSocketEvent()
     data class TypingStopped(val userId: String) : WebSocketEvent()
     data class MessageDelivered(val messageId: String) : WebSocketEvent()
-    data class MessageSeen(val messageId: String) : WebSocketEvent()
+    data class MessageSeen(val messageId: String, val conversationId: String? = null) : WebSocketEvent()
     data class RawMessage(val text: String) : WebSocketEvent()
     data class Error(val message: String) : WebSocketEvent()
     data class Closing(val code: Int, val reason: String) : WebSocketEvent()

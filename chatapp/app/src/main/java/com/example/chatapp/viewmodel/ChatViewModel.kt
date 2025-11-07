@@ -267,7 +267,27 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             is WebSocketEvent.TypingStarted -> _typingUsers.value = _typingUsers.value + event.userId
             is WebSocketEvent.TypingStopped -> _typingUsers.value = _typingUsers.value - event.userId
             is WebSocketEvent.MessageDelivered -> updateMessageStatus(event.messageId) { it.copy(delivered = true) }
-            is WebSocketEvent.MessageSeen -> updateMessageStatus(event.messageId) { it.copy(seen = true) }
+            is WebSocketEvent.MessageSeen -> {
+                // Mark the specific message as seen
+                updateMessageStatus(event.messageId) { it.copy(seen = true) }
+                
+                // Also mark all messages from me in the same conversation as seen
+                // This handles the case where backend sends seen for one message but we want to mark all as seen
+                val conversationId = event.conversationId ?: _currentConversationId.value
+                if (conversationId != null) {
+                    val updatedMessages = _messages.value.map { msg ->
+                        // Mark all my messages in this conversation as seen
+                        if (msg.isFromMe && 
+                            msg.conversationId == conversationId && 
+                            !msg.seen) {
+                            msg.copy(seen = true)
+                        } else {
+                            msg
+                        }
+                    }
+                    _messages.value = updatedMessages
+                }
+            }
             is WebSocketEvent.MessageAck -> applyAck(event.ack)
             is WebSocketEvent.NewMessage -> handleIncomingMessage(event)
             is WebSocketEvent.RawMessage -> {
