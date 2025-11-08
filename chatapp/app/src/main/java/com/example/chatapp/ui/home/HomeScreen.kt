@@ -117,6 +117,8 @@ fun HomeScreen(
                                         name = friendName,
                                         online = false, // TODO: Implement online status from API
                                         onClick = {
+                                            // Clear search query when opening a chat from story
+                                            query = ""
                                             navController?.navigate(
                                                 NavRoutes.Chat.createRoute(
                                                     contactId = friendId,
@@ -169,6 +171,8 @@ fun HomeScreen(
                                         time = conversation.lastTime,
                                         isOnline = conversation.isOnline,
                                         onClick = {
+                                            // Clear search query when opening a conversation
+                                            query = ""
                                             navController?.navigate(
                                                 NavRoutes.Chat.createRoute(
                                                     contactId = contactId,

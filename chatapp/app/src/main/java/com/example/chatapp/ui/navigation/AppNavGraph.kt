@@ -76,14 +76,27 @@ fun AppNavGraph(
                 onBack = { navController.popBackStack() },
                 onInfoClick = {
                     val safeName = contactName ?: contactId
-                    navController.navigate("contactinfo/$safeName")
+                    navController.navigate(
+                        NavRoutes.ContactInfo.createRoute(safeName, contactId)
+                    )
                 }
             )
         }
         composable(NavRoutes.ContactInfo.route) { backStackEntry ->
             val contactName = backStackEntry.arguments?.getString("contactName") ?: "Unknown"
+            val contactId = backStackEntry.arguments?.getString("contactId")
+                ?.takeIf { it != "unknown" && it.isNotBlank() }
             ContactInfoScreen(
                 contactName = contactName,
+                contactId = contactId,
+                onBack = { navController.popBackStack() },
+                navController = navController
+            )
+        }
+        composable(NavRoutes.OtherUserProfile.route) { backStackEntry ->
+            val userId = backStackEntry.arguments?.getString("userId") ?: return@composable
+            com.example.chatapp.ui.profile.OtherUserProfileScreen(
+                userId = userId,
                 onBack = { navController.popBackStack() }
             )
         }

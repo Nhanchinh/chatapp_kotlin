@@ -13,7 +13,14 @@ sealed class NavRoutes(val route: String) {
             return "chat/$safeContactId?contactName=$encodedName&conversationId=$encodedConversationId"
         }
     }
-    data object ContactInfo : NavRoutes("contactinfo/{contactName}")
+    data object ContactInfo : NavRoutes("contactinfo/{contactName}/{contactId}") {
+        fun createRoute(contactName: String, contactId: String?): String {
+            val encodedName = Uri.encode(contactName)
+            val encodedId = Uri.encode(contactId ?: "unknown")
+            return "contactinfo/$encodedName/$encodedId"
+        }
+    }
+    data object OtherUserProfile : NavRoutes("otherprofile/{userId}")
     data object FriendRequest : NavRoutes("friendrequest")
     data object FriendsList : NavRoutes("friendslist")
     data object UserProfile : NavRoutes("profile/{username}")

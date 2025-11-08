@@ -14,11 +14,18 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
+import androidx.compose.foundation.clickable
+import androidx.navigation.NavController
+import com.example.chatapp.ui.navigation.NavRoutes
+import android.net.Uri
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ContactInfoScreen(
     contactName: String,
-    onBack: () -> Unit
+    contactId: String? = null,
+    onBack: () -> Unit,
+    navController: NavController? = null
 ) {
     Scaffold(
         topBar = {
@@ -219,11 +226,17 @@ fun ContactInfoScreen(
                 Divider()
             }
             
-            // Personal page (Placeholder)
+            // Personal page
             item {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .clickable(enabled = contactId != null) {
+                            contactId?.let { userId ->
+                                val encodedUserId = Uri.encode(userId)
+                                navController?.navigate("otherprofile/$encodedUserId")
+                            }
+                        }
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
