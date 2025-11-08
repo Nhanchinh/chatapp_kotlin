@@ -64,9 +64,11 @@ fun HomeScreen(
     val conversationsLoading by chatViewModel.conversationsLoading.collectAsStateWithLifecycle()
     val conversationsError by chatViewModel.conversationsError.collectAsStateWithLifecycle()
     val myUserId by chatViewModel.myUserId.collectAsStateWithLifecycle()
+    val friendsList by chatViewModel.friendsList.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) {
         chatViewModel.refreshConversations()
+        chatViewModel.refreshFriendsList()
     }
 
     Scaffold(
@@ -108,16 +110,17 @@ fun HomeScreen(
                                     .horizontalScroll(rememberScrollState()),
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                val names = listOf("Bạn", "Trung", "Quyền", "Gia Bảo", "Minh")
-                                names.forEach { name ->
+                                friendsList.forEach { friend ->
+                                    val friendId = friend.id ?: return@forEach
+                                    val friendName = friend.fullName ?: friend.email ?: "Unknown"
                                     StoryAvatar(
-                                        name = name,
-                                        online = true,
+                                        name = friendName,
+                                        online = false, // TODO: Implement online status from API
                                         onClick = {
                                             navController?.navigate(
                                                 NavRoutes.Chat.createRoute(
-                                                    contactId = name,
-                                                    contactName = name,
+                                                    contactId = friendId,
+                                                    contactName = friendName,
                                                     conversationId = null
                                                 )
                                             )

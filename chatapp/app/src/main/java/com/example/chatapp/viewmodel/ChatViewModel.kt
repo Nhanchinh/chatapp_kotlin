@@ -9,6 +9,7 @@ import com.example.chatapp.data.model.Message
 import com.example.chatapp.data.repository.ChatRepository
 import com.example.chatapp.data.remote.WebSocketEvent
 import com.example.chatapp.data.remote.model.MessageAck
+import com.example.chatapp.data.remote.model.UserDto
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -37,6 +38,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _friendsMap = MutableStateFlow<Map<String, String>>(emptyMap())
     private val friendsMap: StateFlow<Map<String, String>> = _friendsMap.asStateFlow()
+
+    private val _friendsList = MutableStateFlow<List<UserDto>>(emptyList())
+    val friendsList: StateFlow<List<UserDto>> = _friendsList.asStateFlow()
 
     private val _messages = MutableStateFlow<List<Message>>(emptyList())
     val messages: StateFlow<List<Message>> = _messages.asStateFlow()
@@ -84,6 +88,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     (friend.id ?: "") to (friend.fullName ?: friend.email ?: "Unknown")
                 }
                 _friendsMap.value = map
+                _friendsList.value = response.friends
                 map
             },
             onFailure = {
@@ -91,6 +96,12 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 friendsMap.value
             }
         )
+    }
+
+    fun refreshFriendsList() {
+        viewModelScope.launch {
+            loadFriendsMap()
+        }
     }
 
     fun refreshConversations() {
@@ -136,10 +147,80 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         if (conversationId != null) {
             loadMessages(conversationId)
         } else {
-            _messages.value = emptyList()
+            // Try to find existing conversation in the loaded list
+            findAndLoadExistingConversation(contactId)
         }
 
         ensureWebSocketConnected(resumeSince)
+    }
+
+    private fun findAndLoadExistingConversation(contactId: String) {
+        viewModelScope.launch {
+            val me = currentUserId.value ?: return@launch
+            
+            // First, try to find in already loaded conversations
+            var existingConversation = conversations.value.firstOrNull { conversation ->
+                val participants = conversation.participants.toSet()
+                participants.contains(me) && participants.contains(contactId)
+            }
+            
+            if (existingConversation != null) {
+                // Found existing conversation, load its messages
+                _currentConversationId.value = existingConversation.id
+                loadMessages(existingConversation.id)
+                return@launch
+            }
+            
+            // Not found in loaded list, refresh conversations with higher limit to find it
+            // Use a higher limit (100) to increase chance of finding the conversation
+            _conversationsLoading.value = true
+            val friends = friendsMap.value
+            repository.getConversations(limit = 100).fold(
+                onSuccess = { response ->
+                    val updatedConversations = response.items.map { dto ->
+                        val otherParticipant = dto.participants.firstOrNull { it != me }
+                        val displayName = otherParticipant?.let { friends[it] } ?: otherParticipant ?: "Unknown"
+                        Conversation(
+                            id = dto.id,
+                            name = displayName,
+                            lastMessage = dto.lastMessagePreview.orEmpty(),
+                            lastTime = formatTimestamp(dto.lastMessageAt),
+                            unreadCount = dto.unreadCounters[me] ?: 0,
+                            isOnline = false,
+                            participants = dto.participants,
+                            lastMessageAt = dto.lastMessageAt,
+                            lastMessagePreview = dto.lastMessagePreview
+                        )
+                    }
+                    _conversations.value = updatedConversations
+                    _conversationsLoading.value = false
+                    
+                    // Try to find again after refresh
+                    existingConversation = updatedConversations.firstOrNull { conversation ->
+                        val participants = conversation.participants.toSet()
+                        participants.contains(me) && participants.contains(contactId)
+                    }
+                    
+                    if (existingConversation != null) {
+                        // Found existing conversation after refresh
+                        _currentConversationId.value = existingConversation.id
+                        loadMessages(existingConversation.id)
+                    } else {
+                        // No existing conversation found - this is a new conversation
+                        // Messages will be empty until first message is sent
+                        // Backend will auto-create conversation when first message is sent via WebSocket
+                        _messages.value = emptyList()
+                        _currentConversationId.value = null
+                    }
+                },
+                onFailure = { error ->
+                    _conversationsLoading.value = false
+                    // Even if refresh fails, still allow user to start new conversation
+                    _messages.value = emptyList()
+                    _currentConversationId.value = null
+                }
+            )
+        }
     }
 
     fun clearCurrentChat() {

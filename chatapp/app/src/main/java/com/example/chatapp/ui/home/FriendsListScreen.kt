@@ -33,6 +33,7 @@ import com.example.chatapp.data.remote.model.UserDto
 import com.example.chatapp.data.local.AuthManager
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
+import retrofit2.HttpException
  
 private enum class SearchMode { FRIENDS, USERS }
 
@@ -211,9 +212,43 @@ fun FriendsListScreen(
                                             token = bearer,
                                             targetUserId = targetId
                                         )
+                                        // Success - mark as invited
                                         invitedIds = invitedIds + targetId
+                                        android.util.Log.d("FriendsList", "Friend request sent successfully to $targetId")
+                                    } catch (e: HttpException) {
+                                        // Handle HTTP errors
+                                        val errorMessage = try {
+                                            val errorBody = e.response()?.errorBody()?.string() ?: ""
+                                            when (e.code()) {
+                                                400 -> {
+                                                    when {
+                                                        errorBody.contains("Already friends", ignoreCase = true) -> {
+                                                            "Đã là bạn bè rồi"
+                                                        }
+                                                        errorBody.contains("already sent", ignoreCase = true) || 
+                                                        errorBody.contains("already received", ignoreCase = true) -> {
+                                                            "Đã gửi lời mời kết bạn rồi"
+                                                        }
+                                                        errorBody.contains("yourself", ignoreCase = true) -> {
+                                                            "Không thể kết bạn với chính mình"
+                                                        }
+                                                        else -> "Không thể gửi lời mời kết bạn"
+                                                    }
+                                                }
+                                                401 -> "Phiên đăng nhập đã hết hạn"
+                                                404 -> "Người dùng không tồn tại"
+                                                else -> "Lỗi: ${e.message}"
+                                            }
+                                        } catch (ex: Exception) {
+                                            "Lỗi khi gửi lời mời kết bạn"
+                                        }
+                                        android.util.Log.e("FriendsList", "Error sending friend request: $errorMessage", e)
+                                        // Mark as invited if it's an "already" error (already friends, already sent, etc.)
+                                        if (e.code() == 400) {
+                                            invitedIds = invitedIds + targetId
+                                        }
                                     } catch (e: Exception) {
-                                        // ignore for now; could show toast/snackbar
+                                        android.util.Log.e("FriendsList", "Unexpected error sending friend request", e)
                                     } finally {
                                         addingUserId = null
                                     }
