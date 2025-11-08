@@ -8,6 +8,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -17,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.clickable
 import androidx.navigation.NavController
 import com.example.chatapp.ui.navigation.NavRoutes
+import com.example.chatapp.viewmodel.ChatViewModel
 import android.net.Uri
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -24,9 +29,15 @@ import android.net.Uri
 fun ContactInfoScreen(
     contactName: String,
     contactId: String? = null,
+    conversationId: String? = null,
+    chatViewModel: ChatViewModel,
     onBack: () -> Unit,
+    onDeleteConversation: () -> Unit,
     navController: NavController? = null
 ) {
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var isDeleting by remember { mutableStateOf(false) }
+    var deleteError by remember { mutableStateOf<String?>(null) }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -256,10 +267,113 @@ fun ContactInfoScreen(
                 Divider()
             }
             
+            // Delete conversation
+            if (conversationId != null) {
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                showDeleteDialog = true
+                            }
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = null,
+                            tint = Color(0xFFE91E63),
+                            modifier = Modifier.size(40.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = "Xóa cuộc trò chuyện",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = Color(0xFFE91E63)
+                        )
+                    }
+                    
+                    Divider()
+                }
+            }
+            
             item {
                 Spacer(modifier = Modifier.height(72.dp))
             }
         }
+    }
+    
+    // Delete confirmation dialog
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!isDeleting) {
+                    showDeleteDialog = false
+                    deleteError = null
+                }
+            },
+            title = {
+                Text("Xóa cuộc trò chuyện")
+            },
+            text = {
+                Column {
+                    Text("Bạn có chắc chắn muốn xóa cuộc trò chuyện với $contactName?")
+                    if (deleteError != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = deleteError ?: "",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (conversationId != null && !isDeleting) {
+                            isDeleting = true
+                            deleteError = null
+                            chatViewModel.deleteConversation(
+                                conversationId = conversationId,
+                                onSuccess = {
+                                    showDeleteDialog = false
+                                    isDeleting = false
+                                    onDeleteConversation()
+                                },
+                                onError = { error ->
+                                    deleteError = error
+                                    isDeleting = false
+                                }
+                            )
+                        }
+                    },
+                    enabled = !isDeleting
+                ) {
+                    if (isDeleting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp)
+                        )
+                    } else {
+                        Text(
+                            "Xóa",
+                            color = Color(0xFFE91E63)
+                        )
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteDialog = false
+                        deleteError = null
+                    },
+                    enabled = !isDeleting
+                ) {
+                    Text("Hủy")
+                }
+            }
+        )
     }
 }
 

@@ -77,19 +77,38 @@ fun AppNavGraph(
                 onInfoClick = {
                     val safeName = contactName ?: contactId
                     navController.navigate(
-                        NavRoutes.ContactInfo.createRoute(safeName, contactId)
+                        NavRoutes.ContactInfo.createRoute(safeName, contactId, conversationId)
                     )
                 }
             )
         }
-        composable(NavRoutes.ContactInfo.route) { backStackEntry ->
+        composable(
+            route = NavRoutes.ContactInfo.route,
+            arguments = listOf(
+                navArgument("contactName") {},
+                navArgument("contactId") {},
+                navArgument("conversationId") { defaultValue = "" }
+            )
+        ) { backStackEntry ->
             val contactName = backStackEntry.arguments?.getString("contactName") ?: "Unknown"
             val contactId = backStackEntry.arguments?.getString("contactId")
                 ?.takeIf { it != "unknown" && it.isNotBlank() }
+            val conversationId = backStackEntry.arguments?.getString("conversationId")
+                ?.takeIf { it.isNotBlank() }
             ContactInfoScreen(
                 contactName = contactName,
                 contactId = contactId,
+                conversationId = conversationId,
+                chatViewModel = chatViewModel,
                 onBack = { navController.popBackStack() },
+                onDeleteConversation = {
+                    // Navigate to home after deletion, clearing the back stack
+                    navController.navigate(NavRoutes.Home.route) {
+                        // Pop back to home, removing chat and contact info screens
+                        popUpTo(NavRoutes.Home.route) { inclusive = false }
+                        launchSingleTop = true
+                    }
+                },
                 navController = navController
             )
         }

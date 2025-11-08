@@ -121,6 +121,12 @@ interface ApiService {
         @Header("Authorization") token: String,
         @Body body: MarkReadRequest
     ): MarkReadResponse
+
+    @DELETE("conversations/{conversation_id}")
+    suspend fun deleteConversation(
+        @Header("Authorization") token: String,
+        @Path("conversation_id") conversationId: String
+    ): FriendActionResponse
 }
 
 

@@ -126,5 +126,15 @@ class ChatRepository(private val context: Context) {
             Result.failure(e)
         }
     }
+
+    suspend fun deleteConversation(conversationId: String): Result<FriendActionResponse> {
+        return try {
+            val token = authManager.getAccessTokenOnce() ?: return Result.failure(Exception("Not authenticated"))
+            val response = api.deleteConversation("Bearer $token", conversationId)
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }
 

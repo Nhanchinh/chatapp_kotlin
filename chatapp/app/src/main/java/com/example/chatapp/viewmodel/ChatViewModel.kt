@@ -505,6 +505,30 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun deleteConversation(conversationId: String, onSuccess: () -> Unit, onError: (String) -> Unit) {
+        viewModelScope.launch {
+            repository.deleteConversation(conversationId).fold(
+                onSuccess = {
+                    // Remove conversation from local list
+                    _conversations.value = _conversations.value.filter { it.id != conversationId }
+                    // Clear current conversation if it's the deleted one
+                    if (_currentConversationId.value == conversationId) {
+                        _currentConversationId.value = null
+                        _currentContactId.value = null
+                        _currentContactName.value = null
+                        _messages.value = emptyList()
+                    }
+                    // Refresh conversations list to ensure consistency
+                    refreshConversations()
+                    onSuccess()
+                },
+                onFailure = { exception ->
+                    onError(exception.message ?: "Không thể xóa cuộc trò chuyện")
+                }
+            )
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         disconnectWebSocket()
