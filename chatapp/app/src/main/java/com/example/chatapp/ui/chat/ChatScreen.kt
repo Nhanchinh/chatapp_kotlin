@@ -9,20 +9,20 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -49,13 +49,18 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.focus.onFocusEvent
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.chatapp.data.model.Message
 import com.example.chatapp.ui.common.KeyboardDismissWrapper
 import com.example.chatapp.viewmodel.ChatViewModel
+import kotlinx.coroutines.delay
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -74,6 +79,8 @@ fun ChatScreen(
     val listState = rememberLazyListState()
     var messageText by rememberSaveable { mutableStateOf("") }
     var hasSentTyping by remember { mutableStateOf(false) }
+    var isTextFieldFocused by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(contactId, conversationId) {
         chatViewModel.openConversation(conversationId, contactId, contactName)
@@ -81,6 +88,14 @@ fun ChatScreen(
 
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.lastIndex)
+        }
+    }
+
+    // Scroll to bottom when text field is focused (keyboard opens)
+    LaunchedEffect(isTextFieldFocused) {
+        if (isTextFieldFocused && messages.isNotEmpty()) {
+            delay(300) // Wait for keyboard animation
             listState.animateScrollToItem(messages.lastIndex)
         }
     }
@@ -134,7 +149,12 @@ fun ChatScreen(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth(),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                    contentPadding = PaddingValues(
+                        start = 16.dp,
+                        top = 12.dp,
+                        end = 16.dp,
+                        bottom = 12.dp
+                    ),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(messages) { message ->
@@ -147,6 +167,8 @@ fun ChatScreen(
                     }
                 }
 
+                // Input bar with IME padding to stay above keyboard
+                // This ensures the input bar moves up when keyboard opens
                 ChatInputBar(
                     text = messageText,
                     onTextChange = { newValue ->
@@ -171,11 +193,21 @@ fun ChatScreen(
                                 hasSentTyping = false
                                 chatViewModel.sendTyping(false)
                             }
+                            // Scroll to bottom after sending
+                            scope.launch {
+                                if (messages.isNotEmpty()) {
+                                    listState.animateScrollToItem(messages.lastIndex)
+                                }
+                            }
                         }
                     },
                     onLike = {
                         chatViewModel.sendMessage("👍")
-                    }
+                    },
+                    onFocusChange = { focused ->
+                        isTextFieldFocused = focused
+                    },
+                    modifier = Modifier.imePadding()
                 )
             }
         }
@@ -210,7 +242,7 @@ private fun ChatTopBar(
         },
         navigationIcon = {
             IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
             }
         },
         actions = {
@@ -305,10 +337,12 @@ private fun ChatInputBar(
     text: String,
     onTextChange: (String) -> Unit,
     onSend: () -> Unit,
-    onLike: () -> Unit
+    onLike: () -> Unit,
+    modifier: Modifier = Modifier,
+    onFocusChange: (Boolean) -> Unit = {}
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -317,7 +351,11 @@ private fun ChatInputBar(
         OutlinedTextField(
             value = text,
             onValueChange = onTextChange,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .onFocusEvent { focusState ->
+                    onFocusChange(focusState.isFocused)
+                },
             placeholder = { Text("Nhắn tin") },
             shape = RoundedCornerShape(24.dp),
             colors = OutlinedTextFieldDefaults.colors(
@@ -326,13 +364,23 @@ private fun ChatInputBar(
                 unfocusedContainerColor = Color(0xFFF2F2F2),
                 focusedContainerColor = Color(0xFFF2F2F2)
             ),
+            keyboardOptions = KeyboardOptions(
+                imeAction = ImeAction.Send
+            ),
+            keyboardActions = KeyboardActions(
+                onDone = { onSend() },
+                onSend = { onSend() },
+                onGo = { onSend() },
+                onNext = { onSend() },
+                onSearch = { onSend() }
+            ),
             maxLines = 4,
             minLines = 1
         )
 
         IconButton(onClick = { if (text.isBlank()) onLike() else onSend() }) {
             Icon(
-                imageVector = if (text.isBlank()) Icons.Default.ThumbUp else Icons.Default.Send,
+                imageVector = if (text.isBlank()) Icons.Default.ThumbUp else Icons.AutoMirrored.Filled.Send,
                 contentDescription = if (text.isBlank()) "Like" else "Send",
                 tint = if (text.isBlank()) Color(0xFF2196F3) else Color(0xFF2196F3)
             )

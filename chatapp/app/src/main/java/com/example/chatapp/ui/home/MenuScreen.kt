@@ -180,6 +180,52 @@ fun MenuScreen(navController: NavController? = null, authViewModel: AuthViewMode
                 }
                 
                 Divider()
+                
+                // Quét mã QR (QR Scanner)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { navController?.navigate(NavRoutes.QRCodeScanner.route) }
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.QrCodeScanner,
+                        contentDescription = null,
+                        tint = Color(0xFF2196F3),
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text(
+                        text = "Quét mã QR",
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                }
+                
+                Divider()
+                
+                // Mã QR của tôi (My QR Code)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { navController?.navigate(NavRoutes.MyQRCode.route) }
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.QrCode,
+                        contentDescription = null,
+                        tint = Color(0xFF2196F3),
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text(
+                        text = "Mã QR của tôi",
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                }
+                
+                Divider()
             }
             
             Spacer(modifier = Modifier.weight(1f))

@@ -54,6 +54,12 @@ interface ApiService {
         @Query("prefix") prefix: Boolean = false
     ): SearchUsersResponse
 
+    @GET("users/{user_id}")
+    suspend fun getUserById(
+        @Header("Authorization") token: String,
+        @Path("user_id") userId: String
+    ): UserDto
+
     @POST("friends/request/{target_user_id}")
     suspend fun sendFriendRequest(
         @Header("Authorization") token: String,

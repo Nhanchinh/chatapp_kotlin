@@ -13,6 +13,8 @@ import com.example.chatapp.ui.home.FriendsListScreen
 import com.example.chatapp.ui.home.HomeScreen
 import com.example.chatapp.ui.login.LoginScreen
 import com.example.chatapp.ui.profile.UserProfileScreen
+import com.example.chatapp.ui.qrcode.MyQRCodeScreen
+import com.example.chatapp.ui.qrcode.QRCodeScannerScreen
 import com.example.chatapp.ui.settings.SettingsScreen
 import com.example.chatapp.viewmodel.AuthViewModel
 import com.example.chatapp.viewmodel.ChatViewModel
@@ -113,6 +115,16 @@ fun AppNavGraph(
         composable(NavRoutes.Settings.route) {
             SettingsScreen(
                 onBack = { navController.popBackStack() }
+            )
+        }
+        composable(NavRoutes.QRCodeScanner.route) {
+            QRCodeScannerScreen(
+                navController = navController
+            )
+        }
+        composable(NavRoutes.MyQRCode.route) {
+            MyQRCodeScreen(
+                navController = navController
             )
         }
     }
