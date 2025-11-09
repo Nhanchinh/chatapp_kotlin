@@ -58,6 +58,53 @@ fun FriendsListScreen(
     var searchMode by remember { mutableStateOf(SearchMode.FRIENDS) }
     var modeMenuExpanded by remember { mutableStateOf(false) }
 
+    // Helper function to format last_seen timestamp
+    val formatLastSeen: (String) -> String = { isoTimestamp ->
+        try {
+            // Try different ISO timestamp formats
+            val formats = listOf(
+                java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.getDefault()),
+                java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.getDefault()),
+                java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS", java.util.Locale.getDefault()),
+                java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.getDefault())
+            )
+            
+            var date: java.util.Date? = null
+            for (format in formats) {
+                try {
+                    format.timeZone = java.util.TimeZone.getTimeZone("UTC")
+                    date = format.parse(isoTimestamp)
+                    if (date != null) break
+                } catch (e: Exception) {
+                    continue
+                }
+            }
+            
+            if (date != null) {
+                val now = java.util.Date()
+                val diffMs = now.time - date.time
+                val diffMins = diffMs / (1000 * 60)
+                val diffHours = diffMs / (1000 * 60 * 60)
+                val diffDays = diffMs / (1000 * 60 * 60 * 24)
+                
+                when {
+                    diffMins < 1 -> "Vừa xong"
+                    diffMins < 60 -> "${diffMins.toInt()} phút"
+                    diffHours < 24 -> "${diffHours.toInt()} giờ"
+                    diffDays < 7 -> "${diffDays.toInt()} ngày"
+                    else -> {
+                        val outputFormat = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.getDefault())
+                        outputFormat.format(date)
+                    }
+                }
+            } else {
+                ""
+            }
+        } catch (e: Exception) {
+            ""
+        }
+    }
+
     LaunchedEffect(Unit) {
         // Load friends from backend
         try {
@@ -69,7 +116,9 @@ fun FriendsListScreen(
                 Friend(
                     id = u.id ?: "",
                     name = u.fullName ?: (u.email ?: ""),
-                    mutualFriends = u.friendCount ?: 0
+                    mutualFriends = u.friendCount ?: 0,
+                    isOnline = u.isOnline ?: false,
+                    lastSeen = u.lastSeen?.let { formatLastSeen(it) }
                 )
             }
         } catch (_: Exception) {

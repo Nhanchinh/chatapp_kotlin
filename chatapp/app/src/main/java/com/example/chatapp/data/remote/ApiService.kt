@@ -14,6 +14,8 @@ import com.example.chatapp.data.remote.model.MessagesResponse
 import com.example.chatapp.data.remote.model.UnreadMessagesResponse
 import com.example.chatapp.data.remote.model.MarkReadRequest
 import com.example.chatapp.data.remote.model.MarkReadResponse
+import com.example.chatapp.data.remote.model.PresenceResponse
+import com.example.chatapp.data.remote.model.BatchPresenceResponse
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.Field
@@ -127,6 +129,19 @@ interface ApiService {
         @Header("Authorization") token: String,
         @Path("conversation_id") conversationId: String
     ): FriendActionResponse
+
+    // Presence API
+    @GET("presence/{user_id}")
+    suspend fun getPresence(
+        @Header("Authorization") token: String,
+        @Path("user_id") userId: String
+    ): PresenceResponse
+
+    @GET("presence/batch")
+    suspend fun getBatchPresence(
+        @Header("Authorization") token: String,
+        @Query("user_ids") userIds: String
+    ): BatchPresenceResponse
 }
 
 

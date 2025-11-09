@@ -7,7 +7,8 @@ data class ConversationDto(
     val participants: List<String> = emptyList(),
     @Json(name = "last_message_at") val lastMessageAt: String? = null,
     @Json(name = "last_message_preview") val lastMessagePreview: String? = null,
-    @Json(name = "unread_counters") val unreadCounters: Map<String, Int> = emptyMap()
+    @Json(name = "unread_counters") val unreadCounters: Map<String, Int> = emptyMap(),
+    @Json(name = "is_online") val isOnline: Boolean? = null
 )
 
 data class ConversationsResponse(

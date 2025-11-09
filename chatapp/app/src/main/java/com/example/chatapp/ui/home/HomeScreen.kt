@@ -115,7 +115,7 @@ fun HomeScreen(
                                     val friendName = friend.fullName ?: friend.email ?: "Unknown"
                                     StoryAvatar(
                                         name = friendName,
-                                        online = false, // TODO: Implement online status from API
+                                        online = friend.isOnline ?: false,
                                         onClick = {
                                             // Clear search query when opening a chat from story
                                             query = ""

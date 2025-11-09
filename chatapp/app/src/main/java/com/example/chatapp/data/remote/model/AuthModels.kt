@@ -10,7 +10,9 @@ data class UserDto(
     @Json(name = "friend_count") val friendCount: Int? = null,
     val location: String? = null,
     val hometown: String? = null,
-    @Json(name = "birth_year") val birthYear: Int? = null
+    @Json(name = "birth_year") val birthYear: Int? = null,
+    @Json(name = "is_online") val isOnline: Boolean? = null,
+    @Json(name = "last_seen") val lastSeen: String? = null
 )
 
 data class RegisterRequest(
@@ -62,6 +64,22 @@ data class FriendRequestDto(
 
 data class FriendRequestsResponse(
     val requests: List<FriendRequestDto> = emptyList()
+)
+
+data class PresenceResponse(
+    @Json(name = "user_id") val userId: String,
+    val online: Boolean,
+    @Json(name = "last_seen") val lastSeen: String? = null
+)
+
+data class PresenceDto(
+    @Json(name = "user_id") val userId: String,
+    val online: Boolean,
+    @Json(name = "last_seen") val lastSeen: String? = null
+)
+
+data class BatchPresenceResponse(
+    val presences: List<PresenceDto> = emptyList()
 )
 
 

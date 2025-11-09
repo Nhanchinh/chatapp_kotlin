@@ -123,7 +123,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                             lastMessage = dto.lastMessagePreview.orEmpty(),
                             lastTime = formatTimestamp(dto.lastMessageAt),
                             unreadCount = dto.unreadCounters[me] ?: 0,
-                            isOnline = false,
+                            isOnline = dto.isOnline ?: false,
                             participants = dto.participants,
                             lastMessageAt = dto.lastMessageAt,
                             lastMessagePreview = dto.lastMessagePreview
@@ -186,7 +186,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                             lastMessage = dto.lastMessagePreview.orEmpty(),
                             lastTime = formatTimestamp(dto.lastMessageAt),
                             unreadCount = dto.unreadCounters[me] ?: 0,
-                            isOnline = false,
+                            isOnline = dto.isOnline ?: false,
                             participants = dto.participants,
                             lastMessageAt = dto.lastMessageAt,
                             lastMessagePreview = dto.lastMessagePreview
