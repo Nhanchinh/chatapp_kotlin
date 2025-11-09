@@ -48,6 +48,11 @@ fun AppNavGraph(
                 authViewModel = authViewModel,
                 chatViewModel = chatViewModel,
                 onLogout = {
+                    // Disconnect WebSocket trước khi logout để clear presence
+                    chatViewModel.disconnectWebSocket()
+                    // Clear chat data
+                    chatViewModel.clearCurrentChat()
+                    // Logout
                     authViewModel.logout()
                     navController.navigate(NavRoutes.Login.route) {
                         popUpTo(NavRoutes.Home.route) { inclusive = true }

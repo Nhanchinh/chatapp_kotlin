@@ -372,34 +372,39 @@ fun FriendListItem(
             }
 
             // Online/Last seen indicator
-            Box(
-                modifier = Modifier
-                    .size(20.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (friend.isOnline) {
-                            Color(0xFF4CAF50) // Green for online
-                        } else {
-                            Color(0xFF9E9E9E) // Grey for offline
+            if (friend.isOnline || (friend.lastSeen != null && !friend.isOnline)) {
+                Box(
+                    modifier = Modifier
+                        .size(18.dp)
+                        .align(Alignment.BottomEnd)
+                        .background(Color.White, CircleShape)
+                        .padding(2.5.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(CircleShape)
+                            .background(
+                                if (friend.isOnline) {
+                                    Color(0xFF4CAF50) // Green for online
+                                } else {
+                                    Color(0xFF9E9E9E) // Grey for offline
+                                }
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        // If offline and has lastSeen, show time text
+                        if (friend.lastSeen != null && !friend.isOnline) {
+                            Text(
+                                text = friend.lastSeen.split(" ").getOrNull(0) ?: "", // Take just the number
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 8.sp
+                            )
                         }
-                    )
-                    .align(Alignment.BottomEnd)
-                    .padding(2.dp)
-                    .background(Color.White, CircleShape)
-                    .padding(2.dp)
-                    .clip(CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                // If online, just show green circle
-                // If offline, show time text
-                if (friend.lastSeen != null && !friend.isOnline) {
-                    Text(
-                        text = friend.lastSeen.split(" ")[0], // Take just the number
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 8.sp
-                    )
+                    }
                 }
             }
         }

@@ -136,5 +136,16 @@ class ChatRepository(private val context: Context) {
             Result.failure(e)
         }
     }
+
+    suspend fun setOffline(): Result<Unit> {
+        return try {
+            val token = authManager.getAccessTokenOnce() ?: return Result.failure(Exception("Not authenticated"))
+            api.setOffline("Bearer $token")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            // Ignore errors khi set offline (có thể token đã expired)
+            Result.success(Unit)
+        }
+    }
 }
 

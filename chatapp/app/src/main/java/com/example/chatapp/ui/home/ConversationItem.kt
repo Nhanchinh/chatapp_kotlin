@@ -38,7 +38,7 @@ fun ConversationItem(
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box {
+        Box(modifier = Modifier.size(48.dp)) {
             Box(
                 modifier = Modifier
                     .size(48.dp)
@@ -51,8 +51,10 @@ fun ConversationItem(
             if (isOnline) {
                 Box(
                     modifier = Modifier
-                        .size(12.dp)
+                        .size(14.dp)
                         .align(Alignment.BottomEnd)
+                        .background(Color.White, CircleShape)
+                        .padding(2.dp)
                         .clip(CircleShape)
                         .background(Color(0xFF4CAF50))
                 )

@@ -142,6 +142,11 @@ interface ApiService {
         @Header("Authorization") token: String,
         @Query("user_ids") userIds: String
     ): BatchPresenceResponse
+
+    @POST("presence/offline")
+    suspend fun setOffline(
+        @Header("Authorization") token: String
+    ): FriendActionResponse
 }
 
 

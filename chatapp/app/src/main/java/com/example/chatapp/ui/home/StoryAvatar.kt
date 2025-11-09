@@ -32,27 +32,31 @@ fun StoryAvatar(name: String, online: Boolean, modifier: Modifier = Modifier, on
             .then(modifier)
     ) {
         val ring = Brush.linearGradient(listOf(Color(0xFF42A5F5), Color(0xFF7E57C2)))
-        Box(
-            modifier = Modifier
-                .size(62.dp)
-                .clip(CircleShape)
-                .background(ring)
-                .padding(3.dp)
-        ) {
+        Box(modifier = Modifier.size(62.dp)) {
             Box(
                 modifier = Modifier
-                    .matchParentSize()
+                    .size(62.dp)
                     .clip(CircleShape)
-                    .background(Color(0xFFB39DDB)),
-                contentAlignment = Alignment.Center
+                    .background(ring)
+                    .padding(3.dp)
             ) {
-                Text(text = name.firstOrNull()?.uppercase() ?: "?", color = Color.White)
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .clip(CircleShape)
+                        .background(Color(0xFFB39DDB)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(text = name.firstOrNull()?.uppercase() ?: "?", color = Color.White)
+                }
             }
             if (online) {
                 Box(
                     modifier = Modifier
-                        .size(12.dp)
+                        .size(16.dp)
                         .align(Alignment.BottomEnd)
+                        .background(Color.White, CircleShape)
+                        .padding(2.5.dp)
                         .clip(CircleShape)
                         .background(Color(0xFF4CAF50))
                 )

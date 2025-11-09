@@ -79,6 +79,20 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             loadFriendsMap()
         }
         refreshConversations()
+        
+        // Disconnect WebSocket khi user logout (userId = null)
+        viewModelScope.launch {
+            currentUserId.collect { userId ->
+                if (userId == null) {
+                    // User đã logout, disconnect WebSocket và clear data
+                    disconnectWebSocket()
+                    clearCurrentChat()
+                    _conversations.value = emptyList()
+                    _friendsList.value = emptyList()
+                    _friendsMap.value = emptyMap()
+                }
+            }
+        }
     }
 
     private suspend fun loadFriendsMap(): Map<String, String> {
@@ -106,36 +120,61 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refreshConversations() {
         viewModelScope.launch {
-            // Load friends map first to ensure we have names
-            val friends = loadFriendsMap()
-            
-            _conversationsLoading.value = true
-            _conversationsError.value = null
-            repository.getConversations().fold(
-                onSuccess = { response ->
-                    val me = currentUserId.value
-                    _conversations.value = response.items.map { dto ->
-                        val otherParticipant = dto.participants.firstOrNull { it != me }
-                        val displayName = otherParticipant?.let { friends[it] } ?: otherParticipant ?: "Unknown"
-                        Conversation(
-                            id = dto.id,
-                            name = displayName,
-                            lastMessage = dto.lastMessagePreview.orEmpty(),
-                            lastTime = formatTimestamp(dto.lastMessageAt),
-                            unreadCount = dto.unreadCounters[me] ?: 0,
-                            isOnline = dto.isOnline ?: false,
-                            participants = dto.participants,
-                            lastMessageAt = dto.lastMessageAt,
-                            lastMessagePreview = dto.lastMessagePreview
-                        )
+            try {
+                // Load friends map first to ensure we have names
+                val friends = loadFriendsMap()
+                
+                _conversationsLoading.value = true
+                _conversationsError.value = null
+                repository.getConversations().fold(
+                    onSuccess = { response ->
+                        try {
+                            val me = currentUserId.value
+                            _conversations.value = response.items.mapNotNull { dto ->
+                                try {
+                                    val otherParticipant = dto.participants.firstOrNull { it != me }
+                                    val displayName = otherParticipant?.let { friends[it] } ?: otherParticipant ?: "Unknown"
+                                    val formattedTime = try {
+                                        formatTimestamp(dto.lastMessageAt)
+                                    } catch (e: Exception) {
+                                        android.util.Log.e("ChatViewModel", "Error formatting time for conversation ${dto.id}", e)
+                                        ""
+                                    }
+                                    
+                                    Conversation(
+                                        id = dto.id,
+                                        name = displayName,
+                                        lastMessage = dto.lastMessagePreview.orEmpty(),
+                                        lastTime = formattedTime,
+                                        unreadCount = dto.unreadCounters[me] ?: 0,
+                                        isOnline = dto.isOnline ?: false, // Safe default: false if Redis not available
+                                        participants = dto.participants,
+                                        lastMessageAt = dto.lastMessageAt,
+                                        lastMessagePreview = dto.lastMessagePreview
+                                    )
+                                } catch (e: Exception) {
+                                    android.util.Log.e("ChatViewModel", "Error processing conversation ${dto.id}", e)
+                                    null // Skip this conversation if there's an error
+                                }
+                            }
+                            _conversationsLoading.value = false
+                        } catch (e: Exception) {
+                            android.util.Log.e("ChatViewModel", "Error processing conversations", e)
+                            _conversationsLoading.value = false
+                            _conversationsError.value = "Lỗi xử lý dữ liệu"
+                        }
+                    },
+                    onFailure = { error ->
+                        android.util.Log.e("ChatViewModel", "Error fetching conversations", error)
+                        _conversationsLoading.value = false
+                        _conversationsError.value = error.message ?: "Không thể tải danh sách cuộc trò chuyện"
                     }
-                    _conversationsLoading.value = false
-                },
-                onFailure = { error ->
-                    _conversationsLoading.value = false
-                    _conversationsError.value = error.message
-                }
-            )
+                )
+            } catch (e: Exception) {
+                android.util.Log.e("ChatViewModel", "Unexpected error in refreshConversations", e)
+                _conversationsLoading.value = false
+                _conversationsError.value = "Lỗi không xác định"
+            }
         }
     }
 
@@ -472,10 +511,15 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun disconnectWebSocket() {
-        webSocketJob?.cancel()
-        webSocketJob = null
-        repository.disconnectWebSocket()
-        _webSocketConnected.value = false
+        viewModelScope.launch {
+            // Set offline trước khi disconnect WebSocket
+            repository.setOffline()
+            // Disconnect WebSocket
+            webSocketJob?.cancel()
+            webSocketJob = null
+            repository.disconnectWebSocket()
+            _webSocketConnected.value = false
+        }
     }
 
     private fun parseTimestamp(value: String): Long {
@@ -489,18 +533,132 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun formatTimestamp(value: String?): String {
         if (value.isNullOrBlank()) return ""
+        
         return try {
-            val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault())
-            val date = sdf.parse(value) ?: return ""
+            var date: Date? = null
+            val cleanValue = value.trim()
+            
+            // Thử các format ISO 8601 phổ biến
+            val formats = listOf(
+                // Format với timezone Z
+                SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.getDefault()).apply {
+                    timeZone = java.util.TimeZone.getTimeZone("UTC")
+                },
+                SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault()).apply {
+                    timeZone = java.util.TimeZone.getTimeZone("UTC")
+                },
+                // Format với timezone +00:00
+                SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", Locale.getDefault()),
+                SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.getDefault()),
+                // Format không có timezone
+                SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS", Locale.getDefault()),
+                SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()),
+                // Fallback: format đơn giản
+                SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+            )
+            
+            for (format in formats) {
+                try {
+                    date = format.parse(cleanValue)
+                    if (date != null) break
+                } catch (_: Exception) {
+                    continue
+                }
+            }
+            
+            // Nếu vẫn không parse được, thử parse thủ công
+            if (date == null) {
+                try {
+                    // Loại bỏ milliseconds và timezone
+                    var timePart = cleanValue
+                    if (timePart.contains(".")) {
+                        timePart = timePart.substringBefore(".")
+                    }
+                    if (timePart.contains("+")) {
+                        timePart = timePart.substringBefore("+")
+                    }
+                    if (timePart.contains("-") && timePart.length > 10) {
+                        // Có timezone dạng -05:00
+                        val lastDash = timePart.lastIndexOf("-")
+                        if (lastDash > 10) {
+                            timePart = timePart.substring(0, lastDash)
+                        }
+                    }
+                    timePart = timePart.replace("Z", "")
+                    
+                    val simpleFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault())
+                    simpleFormat.timeZone = java.util.TimeZone.getTimeZone("UTC")
+                    date = simpleFormat.parse(timePart)
+                } catch (_: Exception) {
+                    // Ignore
+                }
+            }
+            
+            if (date == null) {
+                android.util.Log.w("ChatViewModel", "Could not parse timestamp: $value")
+                return ""
+            }
+            
             val now = System.currentTimeMillis()
-            val diff = now - date.time
+            val dateTime = date.time
+            val diff = now - dateTime
+            
+            if (diff < 0) {
+                // Timestamp trong tương lai
+                return ""
+            }
+            
+            // Tính toán ngày
+            val calendarNow = java.util.Calendar.getInstance()
+            val calendarDate = java.util.Calendar.getInstance().apply { 
+                timeInMillis = dateTime
+            }
+            
+            val isToday = calendarNow.get(java.util.Calendar.YEAR) == calendarDate.get(java.util.Calendar.YEAR) &&
+                    calendarNow.get(java.util.Calendar.DAY_OF_YEAR) == calendarDate.get(java.util.Calendar.DAY_OF_YEAR)
+            
+            val isYesterday = run {
+                val yesterday = java.util.Calendar.getInstance().apply {
+                    timeInMillis = now
+                    add(java.util.Calendar.DAY_OF_YEAR, -1)
+                }
+                yesterday.get(java.util.Calendar.YEAR) == calendarDate.get(java.util.Calendar.YEAR) &&
+                yesterday.get(java.util.Calendar.DAY_OF_YEAR) == calendarDate.get(java.util.Calendar.DAY_OF_YEAR)
+            }
+            
+            // Format output
             when {
                 diff < 60_000 -> "Vừa xong"
-                diff < 3_600_000 -> "${diff / 60_000} phút"
-                diff < 86_400_000 -> "${diff / 3_600_000} giờ"
-                else -> SimpleDateFormat("dd/MM", Locale.getDefault()).format(date)
+                diff < 3_600_000 -> {
+                    val minutes = (diff / 60_000).toInt()
+                    "$minutes phút"
+                }
+                isToday -> {
+                    val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+                    timeFormat.timeZone = java.util.TimeZone.getDefault()
+                    timeFormat.format(date)
+                }
+                isYesterday -> {
+                    val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+                    timeFormat.timeZone = java.util.TimeZone.getDefault()
+                    "Hôm qua ${timeFormat.format(date)}"
+                }
+                diff < 7 * 86_400_000 -> {
+                    val dayNames = arrayOf("CN", "T2", "T3", "T4", "T5", "T6", "T7")
+                    val dayOfWeek = calendarDate.get(java.util.Calendar.DAY_OF_WEEK) - 1
+                    val dayName = if (dayOfWeek in dayNames.indices) dayNames[dayOfWeek] else ""
+                    val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+                    timeFormat.timeZone = java.util.TimeZone.getDefault()
+                    "$dayName ${timeFormat.format(date)}"
+                }
+                else -> {
+                    val dateFormat = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
+                    dateFormat.timeZone = java.util.TimeZone.getDefault()
+                    dateFormat.format(date)
+                }
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            android.util.Log.e("ChatViewModel", "Error formatting timestamp: $value", e)
             ""
         }
     }
