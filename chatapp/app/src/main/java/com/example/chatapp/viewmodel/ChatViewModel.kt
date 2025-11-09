@@ -141,16 +141,26 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                                         ""
                                     }
                                     
+                                    // Kiểm tra xem last message có phải do current user gửi không
+                                    val isLastMessageFromMe = dto.lastMessageSenderId == me
+                                    val lastMessageText = dto.lastMessagePreview.orEmpty()
+                                    val displayMessage = if (isLastMessageFromMe && lastMessageText.isNotEmpty()) {
+                                        "Bạn: $lastMessageText"
+                                    } else {
+                                        lastMessageText
+                                    }
+                                    
                                     Conversation(
                                         id = dto.id,
                                         name = displayName,
-                                        lastMessage = dto.lastMessagePreview.orEmpty(),
+                                        lastMessage = displayMessage,
                                         lastTime = formattedTime,
                                         unreadCount = dto.unreadCounters[me] ?: 0,
                                         isOnline = dto.isOnline ?: false, // Safe default: false if Redis not available
                                         participants = dto.participants,
                                         lastMessageAt = dto.lastMessageAt,
-                                        lastMessagePreview = dto.lastMessagePreview
+                                        lastMessagePreview = dto.lastMessagePreview,
+                                        lastMessageSenderId = dto.lastMessageSenderId
                                     )
                                 } catch (e: Exception) {
                                     android.util.Log.e("ChatViewModel", "Error processing conversation ${dto.id}", e)

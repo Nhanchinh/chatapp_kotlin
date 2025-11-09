@@ -170,6 +170,7 @@ fun HomeScreen(
                                         lastMessage = conversation.lastMessage,
                                         time = conversation.lastTime,
                                         isOnline = conversation.isOnline,
+                                        unreadCount = conversation.unreadCount,
                                         onClick = {
                                             // Clear search query when opening a conversation
                                             query = ""

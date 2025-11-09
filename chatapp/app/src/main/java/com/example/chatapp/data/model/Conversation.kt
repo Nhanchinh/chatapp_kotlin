@@ -9,7 +9,8 @@ data class Conversation(
     val isOnline: Boolean = false,
     val participants: List<String> = emptyList(),
     val lastMessageAt: String? = null,
-    val lastMessagePreview: String? = null
+    val lastMessagePreview: String? = null,
+    val lastMessageSenderId: String? = null
 )
 
 
