@@ -40,37 +40,40 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun loadAuthState() {
-        val isLoggedIn = authManager.isLoggedInOnce()
-        val accessToken = if (isLoggedIn) authManager.getAccessTokenOnce() else null
-        val user = authManager.getUserProfileOnce()
-        
-        // Check if token is expired
-        val shouldExpire = if (isLoggedIn && authManager.isTokenExpired()) {
-            handleTokenExpired()
-            false // will be logged out
-        } else {
-            isLoggedIn
-        }
-        
+        val wasLoggedIn = authManager.isLoggedInOnce()
+        val token = if (wasLoggedIn) authManager.getValidAccessToken() else null
+        val isLoggedIn = token != null && authManager.isLoggedInOnce()
+        val user = if (isLoggedIn) authManager.getUserProfileOnce() else null
+
         _authState.value = AuthState(
-            isLoggedIn = shouldExpire,
-            accessToken = if (shouldExpire) accessToken else null,
+            isLoggedIn = isLoggedIn,
+            accessToken = if (isLoggedIn) token else null,
             isInitialized = true,
-            userId = if (shouldExpire) user?.id else null,
-            userEmail = if (shouldExpire) user?.email else null,
-            userFullName = if (shouldExpire) user?.fullName else null,
-            userRole = if (shouldExpire) user?.role else null,
-            userFriendCount = if (shouldExpire) user?.friendCount else null,
-            userLocation = if (shouldExpire) user?.location else null,
-            userHometown = if (shouldExpire) user?.hometown else null,
-            userBirthYear = if (shouldExpire) user?.birthYear else null
+            userId = user?.id,
+            userEmail = user?.email,
+            userFullName = user?.fullName,
+            userRole = user?.role,
+            userFriendCount = user?.friendCount,
+            userLocation = user?.location,
+            userHometown = user?.hometown,
+            userBirthYear = user?.birthYear
         )
     }
 
-    fun login(accessToken: String, expiryTime: Long? = null) {
+    fun login(
+        accessToken: String,
+        expiryTime: Long? = null,
+        refreshToken: String? = null,
+        refreshExpiryTime: Long? = null
+    ) {
         viewModelScope.launch {
             _authState.value = _authState.value.copy(isLoading = true)
-            authManager.saveAccessToken(accessToken, expiryTime)
+            authManager.saveAuthSession(
+                accessToken = accessToken,
+                accessTokenExpiryTime = expiryTime,
+                refreshTokenValue = refreshToken,
+                refreshTokenExpiryTime = refreshExpiryTime
+            )
             val profile = authManager.getUserProfileOnce()
             _authState.value = AuthState(
                 isLoggedIn = true,
@@ -96,26 +99,28 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private suspend fun handleTokenExpired() {
-        // TODO: Call refresh token API here
-        // For now, just logout if token is expired
-        logout()
-    }
-
     fun refreshToken() {
         viewModelScope.launch {
             _authState.value = _authState.value.copy(isLoading = true)
-            try {
-                // TODO: Call refresh token API
-                // val newToken = api.refreshToken()
-                // authManager.saveAccessToken(newToken.token, newToken.expiryTime)
-                
-                // For now, just logout if refresh fails
+            val result = repository.refreshAccessToken()
+            if (result.isSuccess) {
+                val newToken = result.getOrNull()
+                val profile = authManager.getUserProfileOnce()
+                _authState.value = _authState.value.copy(
+                    isLoggedIn = newToken != null,
+                    accessToken = newToken,
+                    isLoading = false,
+                    userId = profile?.id,
+                    userEmail = profile?.email,
+                    userFullName = profile?.fullName,
+                    userRole = profile?.role,
+                    userFriendCount = profile?.friendCount,
+                    userLocation = profile?.location,
+                    userHometown = profile?.hometown,
+                    userBirthYear = profile?.birthYear
+                )
+            } else {
                 logout()
-            } catch (e: Exception) {
-                logout()
-            } finally {
-                _authState.value = _authState.value.copy(isLoading = false)
             }
         }
     }
@@ -127,21 +132,21 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             val result = repository.login(username, password)
             if (result.isSuccess) {
                 val response = result.getOrNull()
-                val token = response?.accessToken ?: authManager.getAccessTokenOnce()
-                val user = response?.user
+                val token = response?.accessToken ?: authManager.getValidAccessToken()
+                val profile = authManager.getUserProfileOnce()
                 _authState.value = AuthState(
                     isLoggedIn = true,
                     accessToken = token,
                     isLoading = false,
                     isInitialized = true,
-                    userId = user?.id ?: _authState.value.userId,
-                    userEmail = user?.email ?: _authState.value.userEmail,
-                    userFullName = user?.fullName ?: _authState.value.userFullName,
-                    userRole = user?.role ?: _authState.value.userRole,
-                    userFriendCount = user?.friendCount ?: _authState.value.userFriendCount,
-                    userLocation = user?.location ?: _authState.value.userLocation,
-                    userHometown = user?.hometown ?: _authState.value.userHometown,
-                    userBirthYear = user?.birthYear ?: _authState.value.userBirthYear
+                    userId = profile?.id ?: _authState.value.userId,
+                    userEmail = profile?.email ?: _authState.value.userEmail,
+                    userFullName = profile?.fullName ?: _authState.value.userFullName,
+                    userRole = profile?.role ?: _authState.value.userRole,
+                    userFriendCount = profile?.friendCount ?: _authState.value.userFriendCount,
+                    userLocation = profile?.location ?: _authState.value.userLocation,
+                    userHometown = profile?.hometown ?: _authState.value.userHometown,
+                    userBirthYear = profile?.birthYear ?: _authState.value.userBirthYear
                 )
                 Result.success(Unit)
             } else {

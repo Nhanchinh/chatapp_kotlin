@@ -7,9 +7,13 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.example.chatapp.data.remote.ApiClient
+import com.example.chatapp.data.remote.model.RefreshTokenRequest
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 // Extension property to access DataStore
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "auth_prefs")
@@ -19,6 +23,8 @@ class AuthManager(private val context: Context) {
         private val ACCESS_TOKEN_KEY = stringPreferencesKey("access_token")
         private val IS_LOGGED_IN_KEY = booleanPreferencesKey("is_logged_in")
         private val TOKEN_EXPIRY_TIME_KEY = stringPreferencesKey("token_expiry_time")
+        private val REFRESH_TOKEN_KEY = stringPreferencesKey("refresh_token")
+        private val REFRESH_TOKEN_EXPIRY_TIME_KEY = stringPreferencesKey("refresh_token_expiry_time")
         private val USER_ID_KEY = stringPreferencesKey("user_id")
         private val USER_EMAIL_KEY = stringPreferencesKey("user_email")
         private val USER_FULL_NAME_KEY = stringPreferencesKey("user_full_name")
@@ -28,6 +34,8 @@ class AuthManager(private val context: Context) {
         private val USER_HOMETOWN_KEY = stringPreferencesKey("user_hometown")
         private val USER_BIRTH_YEAR_KEY = stringPreferencesKey("user_birth_year")
     }
+
+    private val refreshMutex = Mutex()
 
     /**
      * Get the current access token
@@ -48,6 +56,14 @@ class AuthManager(private val context: Context) {
      */
     val tokenExpiryTime: Flow<String?> = context.dataStore.data.map { preferences ->
         preferences[TOKEN_EXPIRY_TIME_KEY]
+    }
+
+    val refreshToken: Flow<String?> = context.dataStore.data.map { preferences ->
+        preferences[REFRESH_TOKEN_KEY]
+    }
+
+    val refreshTokenExpiryTime: Flow<String?> = context.dataStore.data.map { preferences ->
+        preferences[REFRESH_TOKEN_EXPIRY_TIME_KEY]
     }
 
     /**
@@ -89,11 +105,47 @@ class AuthManager(private val context: Context) {
      * Save access token and set login state to true
      */
     suspend fun saveAccessToken(token: String, expiryTime: Long? = null) {
+        saveAuthSession(token, expiryTime, null, null)
+    }
+
+    suspend fun saveAuthSessionWithRelativeExpiry(
+        accessToken: String,
+        accessTokenExpiresInSeconds: Long?,
+        refreshToken: String?,
+        refreshTokenExpiresInSeconds: Long?
+    ) {
+        val now = System.currentTimeMillis()
+        val accessExpiry = accessTokenExpiresInSeconds?.let { now + it * 1000 }
+        val refreshExpiry = refreshTokenExpiresInSeconds?.let { now + it * 1000 }
+        saveAuthSession(accessToken, accessExpiry, refreshToken, refreshExpiry)
+    }
+
+    suspend fun saveAuthSession(
+        accessToken: String,
+        accessTokenExpiryTime: Long?,
+        refreshTokenValue: String?,
+        refreshTokenExpiryTime: Long?
+    ) {
         context.dataStore.edit { preferences ->
-            preferences[ACCESS_TOKEN_KEY] = token
+            preferences[ACCESS_TOKEN_KEY] = accessToken
             preferences[IS_LOGGED_IN_KEY] = true
-            expiryTime?.let {
-                preferences[TOKEN_EXPIRY_TIME_KEY] = it.toString()
+
+            if (accessTokenExpiryTime != null) {
+                preferences[TOKEN_EXPIRY_TIME_KEY] = accessTokenExpiryTime.toString()
+            } else {
+                preferences.remove(TOKEN_EXPIRY_TIME_KEY)
+            }
+
+            if (refreshTokenValue != null) {
+                preferences[REFRESH_TOKEN_KEY] = refreshTokenValue
+            } else {
+                preferences.remove(REFRESH_TOKEN_KEY)
+            }
+
+            if (refreshTokenExpiryTime != null) {
+                preferences[REFRESH_TOKEN_EXPIRY_TIME_KEY] = refreshTokenExpiryTime.toString()
+            } else {
+                preferences.remove(REFRESH_TOKEN_EXPIRY_TIME_KEY)
             }
         }
     }
@@ -131,6 +183,8 @@ class AuthManager(private val context: Context) {
             preferences.remove(ACCESS_TOKEN_KEY)
             preferences[IS_LOGGED_IN_KEY] = false
             preferences.remove(TOKEN_EXPIRY_TIME_KEY)
+            preferences.remove(REFRESH_TOKEN_KEY)
+            preferences.remove(REFRESH_TOKEN_EXPIRY_TIME_KEY)
             preferences.remove(USER_ID_KEY)
             preferences.remove(USER_EMAIL_KEY)
             preferences.remove(USER_FULL_NAME_KEY)
@@ -146,15 +200,8 @@ class AuthManager(private val context: Context) {
      * Check if token is expired
      */
     suspend fun isTokenExpired(): Boolean {
-        val expiryTime = tokenExpiryTime.first()
-        return expiryTime?.let {
-            try {
-                val expiry = it.toLong()
-                System.currentTimeMillis() >= expiry
-            } catch (e: Exception) {
-                false
-            }
-        } ?: false
+        val expiryTime = tokenExpiryTime.first()?.toLongOrNull()
+        return expiryTime?.let { System.currentTimeMillis() >= it } ?: false
     }
 
     /**
@@ -162,6 +209,61 @@ class AuthManager(private val context: Context) {
      */
     suspend fun getAccessTokenOnce(): String? {
         return accessToken.first()
+    }
+
+    suspend fun getRefreshTokenOnce(): String? {
+        return refreshToken.first()
+    }
+
+    suspend fun isRefreshTokenExpired(): Boolean {
+        val expiryTime = refreshTokenExpiryTime.first()?.toLongOrNull()
+        return expiryTime?.let { System.currentTimeMillis() >= it } ?: false
+    }
+
+    suspend fun getValidAccessToken(): String? {
+        val currentToken = accessToken.first()
+        val isExpired = isTokenExpired()
+        if (!isExpired && !currentToken.isNullOrBlank()) {
+            return currentToken
+        }
+
+        return refreshMutex.withLock {
+            val latestToken = accessToken.first()
+            val latestExpired = isTokenExpired()
+            if (!latestExpired && !latestToken.isNullOrBlank()) {
+                return@withLock latestToken
+            }
+            refreshAccessTokenInternal()
+        }
+    }
+
+    private suspend fun refreshAccessTokenInternal(): String? {
+        val refreshTokenValue = refreshToken.first()
+        if (refreshTokenValue.isNullOrBlank()) {
+            logout()
+            return null
+        }
+
+        if (isRefreshTokenExpired()) {
+            logout()
+            return null
+        }
+
+        return try {
+            val response = ApiClient.apiService.refreshTokens(
+                RefreshTokenRequest(refreshTokenValue)
+            )
+            saveAuthSessionWithRelativeExpiry(
+                accessToken = response.accessToken,
+                accessTokenExpiresInSeconds = response.expiresIn,
+                refreshToken = response.refreshToken,
+                refreshTokenExpiresInSeconds = response.refreshExpiresIn
+            )
+            response.accessToken
+        } catch (e: Exception) {
+            logout()
+            null
+        }
     }
 
     suspend fun getUserProfileOnce(): UserProfileLocal? {

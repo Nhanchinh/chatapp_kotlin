@@ -24,8 +24,12 @@ class AuthRepository(context: Context) {
     suspend fun login(username: String, password: String): Result<LoginResponse> {
         return try {
             val response = api.login(username = username, password = password)
-            val expiryTime = response.expiresIn?.let { System.currentTimeMillis() + it * 1000 }
-            authManager.saveAccessToken(response.accessToken, expiryTime)
+            authManager.saveAuthSessionWithRelativeExpiry(
+                accessToken = response.accessToken,
+                accessTokenExpiresInSeconds = response.expiresIn,
+                refreshToken = response.refreshToken,
+                refreshTokenExpiresInSeconds = response.refreshExpiresIn
+            )
             response.user?.let { user ->
                 authManager.saveUserProfile(
                     id = user.id,
@@ -51,7 +55,7 @@ class AuthRepository(context: Context) {
         birthYear: Int? = null
     ): Result<UserDto> {
         return try {
-            val token = authManager.getAccessTokenOnce() ?: return Result.failure(Exception("No token"))
+            val token = authManager.getValidAccessToken() ?: return Result.failure(Exception("No token"))
             val request = ProfileUpdateRequest(
                 fullName = fullName,
                 location = location,
@@ -71,6 +75,16 @@ class AuthRepository(context: Context) {
                 birthYear = updatedUser.birthYear
             )
             Result.success(updatedUser)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun refreshAccessToken(): Result<String> {
+        return try {
+            val token = authManager.getValidAccessToken()
+                ?: return Result.failure(Exception("Unable to refresh token"))
+            Result.success(token)
         } catch (e: Exception) {
             Result.failure(e)
         }

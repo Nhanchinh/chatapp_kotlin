@@ -16,6 +16,8 @@ import com.example.chatapp.data.remote.model.MarkReadRequest
 import com.example.chatapp.data.remote.model.MarkReadResponse
 import com.example.chatapp.data.remote.model.PresenceResponse
 import com.example.chatapp.data.remote.model.BatchPresenceResponse
+import com.example.chatapp.data.remote.model.RefreshTokenRequest
+import com.example.chatapp.data.remote.model.RefreshTokenResponse
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.Field
@@ -38,6 +40,11 @@ interface ApiService {
         @Field("username") username: String,
         @Field("password") password: String
     ): LoginResponse
+
+    @POST("auth/refresh")
+    suspend fun refreshTokens(
+        @Body body: RefreshTokenRequest
+    ): RefreshTokenResponse
 
     @GET("auth/profile")
     suspend fun getProfile(@Header("Authorization") token: String): UserDto

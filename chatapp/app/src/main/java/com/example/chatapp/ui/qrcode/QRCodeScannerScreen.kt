@@ -93,9 +93,8 @@ fun QRCodeScannerScreen(
         error = null
         try {
             val auth = AuthManager(context)
-            val token = auth.getAccessTokenOnce()
-            val bearer = token?.let { "Bearer $it" } ?: ""
-            val user = ApiClient.apiService.getUserById(bearer, userIdToLoad)
+            val token = auth.getValidAccessToken() ?: throw IllegalStateException("Phiên đăng nhập đã hết hạn")
+            val user = ApiClient.apiService.getUserById("Bearer $token", userIdToLoad)
             scannedUser = user
             isLoading = false
         } catch (e: Exception) {
@@ -112,9 +111,8 @@ fun QRCodeScannerScreen(
             scope.launch {
                 try {
                     val auth = AuthManager(context)
-                    val token = auth.getAccessTokenOnce()
-                    val bearer = token?.let { "Bearer $it" } ?: ""
-                    ApiClient.apiService.sendFriendRequest(bearer, userId)
+                    val token = auth.getValidAccessToken() ?: throw IllegalStateException("Phiên đăng nhập đã hết hạn")
+                    ApiClient.apiService.sendFriendRequest("Bearer $token", userId)
                     invited = true
                     isAdding = false
                 } catch (e: Exception) {

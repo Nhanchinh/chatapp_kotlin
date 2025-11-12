@@ -32,10 +32,10 @@ fun MenuScreen(navController: NavController? = null, authViewModel: AuthViewMode
     var pendingRequests by remember { mutableStateOf(0) }
     LaunchedEffect(Unit) {
         try {
-            val auth = AuthManager(navController?.context ?: return@LaunchedEffect)
-            val token = auth.getAccessTokenOnce()
-            val bearer = token?.let { "Bearer $it" } ?: ""
-            val resp = ApiClient.apiService.getFriendRequests(bearer)
+            val context = navController?.context ?: return@LaunchedEffect
+            val auth = AuthManager(context)
+            val token = auth.getValidAccessToken() ?: return@LaunchedEffect
+            val resp = ApiClient.apiService.getFriendRequests("Bearer $token")
             pendingRequests = resp.requests.size
         } catch (_: Exception) { pendingRequests = 0 }
     }

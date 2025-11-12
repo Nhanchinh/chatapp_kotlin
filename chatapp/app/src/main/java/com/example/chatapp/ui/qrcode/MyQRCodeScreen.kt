@@ -44,10 +44,9 @@ fun MyQRCodeScreen(
     LaunchedEffect(Unit) {
         // Get user info if needed
         try {
-            val token = auth.getAccessTokenOnce()
+            val token = auth.getValidAccessToken()
             if (token != null) {
-                val bearer = "Bearer $token"
-                val profile = com.example.chatapp.data.remote.ApiClient.apiService.getProfile(bearer)
+                val profile = com.example.chatapp.data.remote.ApiClient.apiService.getProfile("Bearer $token")
                 userFullName = profile.fullName
             }
         } catch (_: Exception) {

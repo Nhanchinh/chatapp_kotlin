@@ -31,6 +31,8 @@ data class LoginResponse(
     @Json(name = "access_token") val accessToken: String,
     @Json(name = "token_type") val tokenType: String,
     @Json(name = "expires_in") val expiresIn: Long? = null,
+    @Json(name = "refresh_token") val refreshToken: String? = null,
+    @Json(name = "refresh_expires_in") val refreshExpiresIn: Long? = null,
     val user: UserDto? = null
 )
 
@@ -43,6 +45,18 @@ data class ProfileUpdateRequest(
 
 data class SearchUsersResponse(
     val items: List<UserDto> = emptyList()
+)
+
+data class RefreshTokenRequest(
+    @Json(name = "refresh_token") val refreshToken: String
+)
+
+data class RefreshTokenResponse(
+    @Json(name = "access_token") val accessToken: String,
+    @Json(name = "token_type") val tokenType: String,
+    @Json(name = "expires_in") val expiresIn: Long? = null,
+    @Json(name = "refresh_token") val refreshToken: String,
+    @Json(name = "refresh_expires_in") val refreshExpiresIn: Long? = null
 )
 
 data class FriendActionResponse(

@@ -40,10 +40,9 @@ fun OtherUserProfileScreen(
         error = null
         try {
             val auth = AuthManager(context)
-            val token = auth.getAccessTokenOnce()
+            val token = auth.getValidAccessToken()
             if (token != null) {
-                val bearer = "Bearer $token"
-                val user = ApiClient.apiService.getUserById(bearer, userId)
+                val user = ApiClient.apiService.getUserById("Bearer $token", userId)
                 userInfo = user
             } else {
                 error = "Không thể xác thực"

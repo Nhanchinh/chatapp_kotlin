@@ -40,9 +40,8 @@ fun FriendRequestScreen(onBack: () -> Unit = {}) {
     LaunchedEffect(Unit) {
         try {
             val auth = AuthManager(context)
-            val token = auth.getAccessTokenOnce()
-            val bearer = token?.let { "Bearer $it" } ?: ""
-            val resp = ApiClient.apiService.getFriendRequests(bearer)
+            val token = auth.getValidAccessToken() ?: return@LaunchedEffect
+            val resp = ApiClient.apiService.getFriendRequests("Bearer $token")
             friendRequests = resp.requests.map { r ->
                 val displayName = r.requester?.fullName ?: r.requester?.email ?: (r.fromUser ?: "")
                 FriendRequest(
@@ -113,9 +112,8 @@ fun FriendRequestScreen(onBack: () -> Unit = {}) {
                         scope.launch {
                             try {
                                 val auth = AuthManager(context)
-                                val token = auth.getAccessTokenOnce()
-                                val bearer = token?.let { "Bearer $it" } ?: ""
-                                ApiClient.apiService.acceptFriendRequest(bearer, fromUserId = request.id)
+                                val token = auth.getValidAccessToken() ?: return@launch
+                                ApiClient.apiService.acceptFriendRequest("Bearer $token", fromUserId = request.id)
                                 friendRequests = friendRequests.filter { it.id != request.id }
                             } catch (_: Exception) {}
                         }
@@ -124,9 +122,8 @@ fun FriendRequestScreen(onBack: () -> Unit = {}) {
                         scope.launch {
                             try {
                                 val auth = AuthManager(context)
-                                val token = auth.getAccessTokenOnce()
-                                val bearer = token?.let { "Bearer $it" } ?: ""
-                                ApiClient.apiService.cancelOrDeclineFriendRequest(bearer, userId = request.id)
+                                val token = auth.getValidAccessToken() ?: return@launch
+                                ApiClient.apiService.cancelOrDeclineFriendRequest("Bearer $token", userId = request.id)
                                 friendRequests = friendRequests.filter { it.id != request.id }
                             } catch (_: Exception) {}
                         }

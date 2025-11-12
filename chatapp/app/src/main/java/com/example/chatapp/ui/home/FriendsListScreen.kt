@@ -109,9 +109,12 @@ fun FriendsListScreen(
         // Load friends from backend
         try {
             val auth = AuthManager(context)
-            val token = auth.getAccessTokenOnce()
-            val bearer = token?.let { "Bearer $it" } ?: ""
-            val resp = ApiClient.apiService.getFriendsList(bearer)
+            val token = auth.getValidAccessToken()
+            if (token == null) {
+                friends = emptyList()
+                return@LaunchedEffect
+            }
+            val resp = ApiClient.apiService.getFriendsList("Bearer $token")
             friends = resp.friends.map { u ->
                 Friend(
                     id = u.id ?: "",
@@ -176,10 +179,9 @@ fun FriendsListScreen(
                                     isSearchingUsers = true
                                     try {
                                         val auth = AuthManager(context)
-                                        val token = auth.getAccessTokenOnce()
-                                        val bearer = token?.let { "Bearer $it" } ?: ""
+                                        val token = auth.getValidAccessToken() ?: return@launch
                                         val resp = ApiClient.apiService.searchUsers(
-                                            token = bearer,
+                                            token = "Bearer $token",
                                             query = searchQuery,
                                             limit = 20,
                                             prefix = false
@@ -255,10 +257,9 @@ fun FriendsListScreen(
                                     addingUserId = targetId
                                     try {
                                         val auth = AuthManager(context)
-                                        val token = auth.getAccessTokenOnce()
-                                        val bearer = token?.let { "Bearer $it" } ?: ""
+                                        val token = auth.getValidAccessToken() ?: return@launch
                                         val resp = ApiClient.apiService.sendFriendRequest(
-                                            token = bearer,
+                                            token = "Bearer $token",
                                             targetUserId = targetId
                                         )
                                         // Success - mark as invited
@@ -320,9 +321,8 @@ fun FriendsListScreen(
                             scope.launch {
                                 try {
                                     val auth = AuthManager(context)
-                                    val token = auth.getAccessTokenOnce()
-                                    val bearer = token?.let { "Bearer $it" } ?: ""
-                                    ApiClient.apiService.unfriend(bearer, friendId = friend.id)
+                                    val token = auth.getValidAccessToken() ?: return@launch
+                                    ApiClient.apiService.unfriend("Bearer $token", friendId = friend.id)
                                     friends = friends.filter { it.id != friend.id }
                                 } catch (_: Exception) {
                                 } finally {

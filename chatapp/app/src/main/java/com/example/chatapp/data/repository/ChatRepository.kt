@@ -16,7 +16,7 @@ class ChatRepository(private val context: Context) {
 
     suspend fun getConversations(limit: Int = 20, cursor: String? = null): Result<ConversationsResponse> {
         return try {
-            val token = authManager.getAccessTokenOnce() ?: return Result.failure(Exception("Not authenticated"))
+            val token = authManager.getValidAccessToken() ?: return Result.failure(Exception("Not authenticated"))
             val response = api.getConversations("Bearer $token", limit, cursor)
             Result.success(response)
         } catch (e: Exception) {
@@ -26,7 +26,7 @@ class ChatRepository(private val context: Context) {
 
     suspend fun getMessages(conversationId: String, limit: Int = 50, cursor: String? = null): Result<MessagesResponse> {
         return try {
-            val token = authManager.getAccessTokenOnce() ?: return Result.failure(Exception("Not authenticated"))
+            val token = authManager.getValidAccessToken() ?: return Result.failure(Exception("Not authenticated"))
             val response = api.getMessages("Bearer $token", conversationId, limit, cursor)
             Result.success(response)
         } catch (e: Exception) {
@@ -36,7 +36,7 @@ class ChatRepository(private val context: Context) {
 
     suspend fun getUnreadMessages(fromUserId: String? = null): Result<UnreadMessagesResponse> {
         return try {
-            val token = authManager.getAccessTokenOnce() ?: return Result.failure(Exception("Not authenticated"))
+            val token = authManager.getValidAccessToken() ?: return Result.failure(Exception("Not authenticated"))
             val response = api.getUnreadMessages("Bearer $token", fromUserId)
             Result.success(response)
         } catch (e: Exception) {
@@ -46,7 +46,7 @@ class ChatRepository(private val context: Context) {
 
     suspend fun markRead(fromUserId: String? = null, conversationId: String? = null): Result<MarkReadResponse> {
         return try {
-            val token = authManager.getAccessTokenOnce() ?: return Result.failure(Exception("Not authenticated"))
+            val token = authManager.getValidAccessToken() ?: return Result.failure(Exception("Not authenticated"))
             val response = api.markRead("Bearer $token", MarkReadRequest(fromUserId, conversationId))
             Result.success(response)
         } catch (e: Exception) {
@@ -56,7 +56,7 @@ class ChatRepository(private val context: Context) {
 
     suspend fun connectWebSocket(resumeSince: Long? = null): Flow<WebSocketEvent> {
         val userId = authManager.userId.first()
-        val token = authManager.getAccessTokenOnce()
+        val token = authManager.getValidAccessToken()
         
         if (userId == null || token == null) {
             throw IllegalStateException("Not authenticated")
@@ -119,7 +119,7 @@ class ChatRepository(private val context: Context) {
 
     suspend fun getFriendsList(): Result<FriendsListResponse> {
         return try {
-            val token = authManager.getAccessTokenOnce() ?: return Result.failure(Exception("Not authenticated"))
+            val token = authManager.getValidAccessToken() ?: return Result.failure(Exception("Not authenticated"))
             val response = api.getFriendsList("Bearer $token")
             Result.success(response)
         } catch (e: Exception) {
@@ -129,7 +129,7 @@ class ChatRepository(private val context: Context) {
 
     suspend fun deleteConversation(conversationId: String): Result<FriendActionResponse> {
         return try {
-            val token = authManager.getAccessTokenOnce() ?: return Result.failure(Exception("Not authenticated"))
+            val token = authManager.getValidAccessToken() ?: return Result.failure(Exception("Not authenticated"))
             val response = api.deleteConversation("Bearer $token", conversationId)
             Result.success(response)
         } catch (e: Exception) {
@@ -139,7 +139,7 @@ class ChatRepository(private val context: Context) {
 
     suspend fun setOffline(): Result<Unit> {
         return try {
-            val token = authManager.getAccessTokenOnce() ?: return Result.failure(Exception("Not authenticated"))
+            val token = authManager.getValidAccessToken() ?: return Result.failure(Exception("Not authenticated"))
             api.setOffline("Bearer $token")
             Result.success(Unit)
         } catch (e: Exception) {
