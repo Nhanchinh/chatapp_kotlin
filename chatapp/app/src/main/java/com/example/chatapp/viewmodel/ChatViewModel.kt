@@ -68,6 +68,12 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     private var webSocketJob: Job? = null
 
+    // E2EE: Cache conversations đã decrypt thành công (tránh decrypt lại mỗi lần refresh)
+    private val decryptedConversations = mutableSetOf<String>()
+    
+    // E2EE: Track conversations đã try auto-setup (tránh infinite loop)
+    private val autoSetupAttempted = mutableSetOf<String>()
+
     private val currentUserId: StateFlow<String?> = authManager.userId
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
@@ -147,9 +153,14 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                                     
                                     // Try to decrypt preview if it's encrypted
                                     val decryptedPreview = if (lastMessageText == "[Encrypted Message]") {
-                                        // Try to decrypt asynchronously (will update later)
-                                        tryDecryptConversationPreview(dto.id)
-                                        "🔒 Đang giải mã..."  // Temporary while decrypting
+                                        // Only decrypt if not already done (avoid re-decrypt on every refresh)
+                                        if (!decryptedConversations.contains(dto.id)) {
+                                            tryDecryptConversationPreview(dto.id)
+                                            "🔒 Đang giải mã..."  // Temporary while decrypting
+                                        } else {
+                                            // Already attempted, keep current state
+                                            lastMessageText
+                                        }
                                     } else {
                                         lastMessageText
                                     }
@@ -209,20 +220,32 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         _currentConversationId.value = conversationId
 
         if (conversationId != null) {
-            loadMessages(conversationId)
-            
-            // Setup E2EE encryption for this conversation if not already setup
+            // **CRITICAL**: Setup encryption BEFORE loading messages to avoid decrypt failures
             viewModelScope.launch {
-                try {
-                    val me = currentUserId.value
-                    if (me != null && !repository.isEncryptionAvailable(conversationId)) {
-                        val participants = listOf(me, contactId)
-                        android.util.Log.d("ChatViewModel", "Setting up E2EE for conversation: $conversationId")
-                        repository.setupConversationEncryption(conversationId, participants)
-                    }
-                } catch (e: Exception) {
-                    android.util.Log.e("ChatViewModel", "Error setting up encryption", e)
+                val me = currentUserId.value
+                if (me != null && !repository.isEncryptionAvailable(conversationId)) {
+                    val participants = listOf(me, contactId)
+                    android.util.Log.d("ChatViewModel", "Setting up E2EE BEFORE loading messages: $conversationId")
+                    
+                    repository.setupConversationEncryption(conversationId, participants).fold(
+                        onSuccess = { success ->
+                            if (success) {
+                                android.util.Log.d("ChatViewModel", "E2EE setup successful")
+                            } else {
+                                android.util.Log.w("ChatViewModel", "E2EE setup returned false")
+                            }
+                        },
+                        onFailure = { error ->
+                            android.util.Log.e("ChatViewModel", "Error setting up encryption: ${error.message}")
+                        }
+                    )
+                    
+                    // Small delay to ensure keys are fully stored
+                    kotlinx.coroutines.delay(300)
                 }
+                
+                // Load messages AFTER encryption is setup
+                loadMessages(conversationId)
             }
         } else {
             // Try to find existing conversation in the loaded list
@@ -318,11 +341,20 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             repository.getMessages(conversationId, limit, cursor).fold(
                 onSuccess = { response ->
                     val me = currentUserId.value
+                    var hasEncryptedMessages = false
+                    var failedToDecrypt = false
+                    
                     _messages.value = response.items.map { dto ->
                         // Decrypt message if encrypted
                         val displayText = if (dto.isEncrypted && dto.iv != null) {
+                            hasEncryptedMessages = true
                             val decrypted = repository.decryptMessage(dto.content, dto.iv, conversationId)
-                            decrypted ?: "[Không thể giải mã]"
+                            if (decrypted == null) {
+                                failedToDecrypt = true
+                                "[Không thể giải mã]"
+                            } else {
+                                decrypted
+                            }
                         } else {
                             dto.content
                         }
@@ -343,6 +375,37 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                             clientMessageId = dto.clientMessageId
                         )
                     }
+                    
+                    // **AUTO-FIX**: If we have encrypted messages but failed to decrypt, 
+                    // setup encryption (this handles case where peer created key but we don't have it)
+                    // Only attempt once per conversation to avoid infinite loop
+                    if (hasEncryptedMessages && failedToDecrypt && !autoSetupAttempted.contains(conversationId)) {
+                        android.util.Log.w("ChatViewModel", "Detected encrypted messages but missing key! Auto-setup encryption...")
+                        autoSetupAttempted.add(conversationId) // Mark as attempted
+                        
+                        val contactId = _currentContactId.value
+                        if (me != null && contactId != null) {
+                            viewModelScope.launch {
+                                val participants = listOf(me, contactId)
+                                repository.setupConversationEncryption(conversationId, participants).fold(
+                                    onSuccess = { success ->
+                                        if (success) {
+                                            android.util.Log.d("ChatViewModel", "Auto-setup encryption successful! Reloading messages...")
+                                            // Reload messages to decrypt them with new key
+                                            kotlinx.coroutines.delay(500)
+                                            loadMessages(conversationId, limit, cursor)
+                                        } else {
+                                            android.util.Log.w("ChatViewModel", "Auto-setup returned false")
+                                        }
+                                    },
+                                    onFailure = { error ->
+                                        android.util.Log.e("ChatViewModel", "Auto-setup encryption failed: ${error.message}")
+                                    }
+                                )
+                            }
+                        }
+                    }
+                    
                     _messagesLoading.value = false
                     markRead(conversationId = conversationId)
                 },
@@ -356,10 +419,33 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     fun sendMessage(content: String) {
         val to = _currentContactId.value ?: return
-        val conversationId = _currentConversationId.value
+        var conversationId = _currentConversationId.value
         viewModelScope.launch {
+            val me = currentUserId.value ?: return@launch
+            
+            // **CRITICAL**: Setup encryption BEFORE sending message to avoid race condition
+            if (conversationId != null && !repository.isEncryptionAvailable(conversationId)) {
+                try {
+                    android.util.Log.d("ChatViewModel", "Setting up E2EE before sending message for conversation: $conversationId")
+                    val participants = listOf(me, to)
+                    repository.setupConversationEncryption(conversationId, participants).fold(
+                        onSuccess = { success ->
+                            if (success) {
+                                android.util.Log.d("ChatViewModel", "E2EE setup successful before sending")
+                            }
+                        },
+                        onFailure = { error ->
+                            android.util.Log.e("ChatViewModel", "E2EE setup failed: ${error.message}")
+                        }
+                    )
+                    // Small delay to ensure keys are stored
+                    kotlinx.coroutines.delay(200)
+                } catch (e: Exception) {
+                    android.util.Log.e("ChatViewModel", "Error setting up encryption before send", e)
+                }
+            }
+            
             val clientMessageId = UUID.randomUUID().toString()
-            val me = currentUserId.value ?: ""
             // Resolve my name from friends map (though it's usually not displayed for own messages)
             val friends = friendsMap.value
             val myDisplayName = friends[me] ?: me
@@ -487,6 +573,12 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         if (_currentConversationId.value == null) {
             _currentConversationId.value = ack.conversationId
         }
+        
+        // Clear decrypt cache for this conversation (new message = need to decrypt new preview)
+        decryptedConversations.remove(ack.conversationId)
+        // Clear auto-setup flag (allow retry if needed)
+        autoSetupAttempted.remove(ack.conversationId)
+        
         refreshConversations()
     }
 
@@ -562,6 +654,13 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     markRead(conversationId = conversationId)
                 }
             }
+        }
+        
+        // Clear decrypt cache for this conversation (new message = need to decrypt new preview)
+        if (conversationId.isNotEmpty()) {
+            decryptedConversations.remove(conversationId)
+            // Clear auto-setup flag (allow retry if needed)
+            autoSetupAttempted.remove(conversationId)
         }
         
         // Always refresh conversations to update last message preview
@@ -748,6 +847,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * Try to decrypt conversation preview asynchronously
      * This fetches the last message and decrypts it to show in conversation list
+     * 
+     * OPTIMIZATION: Mark conversation as processed to avoid re-decrypt on every refresh
      */
     private fun tryDecryptConversationPreview(conversationId: String) {
         viewModelScope.launch {
@@ -756,24 +857,21 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 val result = repository.getMessages(conversationId, limit = 1)
                 result.fold(
                     onSuccess = { response ->
-                        if (response.items.isNotEmpty()) {
-                            val lastMsg = response.items.first()
-                            
-                            // Try to decrypt if encrypted
-                            val decryptedText = if (lastMsg.isEncrypted && lastMsg.iv != null) {
-                                repository.decryptMessage(lastMsg.content, lastMsg.iv, conversationId)
-                                    ?: lastMsg.content // Fallback to ciphertext if decrypt fails
-                            } else {
-                                lastMsg.content
-                            }
-                            
-                            // Update conversation preview in the list
+                        if (response.items.isEmpty()) {
+                            // No messages, mark as processed
+                            decryptedConversations.add(conversationId)
+                            return@fold
+                        }
+                        
+                        val lastMsg = response.items.first()
+                        
+                        // If message is NOT encrypted, just display it (old message before E2EE)
+                        if (!lastMsg.isEncrypted || lastMsg.iv == null) {
                             val me = currentUserId.value
                             val isFromMe = lastMsg.senderId == me
-                            val preview = decryptedText.take(50) // Limit length
+                            val preview = lastMsg.content.take(50)
                             val displayText = if (isFromMe) "Bạn: $preview" else preview
                             
-                            // Update the conversation in the list
                             _conversations.value = _conversations.value.map { conv ->
                                 if (conv.id == conversationId) {
                                     conv.copy(lastMessage = displayText)
@@ -781,11 +879,52 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                                     conv
                                 }
                             }
+                            
+                            // Mark as processed (no need to check again)
+                            decryptedConversations.add(conversationId)
+                            return@fold
+                        }
+                        
+                        // Try to decrypt encrypted message
+                        val decrypted = repository.decryptMessage(lastMsg.content, lastMsg.iv, conversationId)
+                        
+                        val me = currentUserId.value
+                        val isFromMe = lastMsg.senderId == me
+                        
+                        if (decrypted != null) {
+                            // Decryption successful
+                            val preview = decrypted.take(50)
+                            val displayText = if (isFromMe) "Bạn: $preview" else preview
+                            
+                            _conversations.value = _conversations.value.map { conv ->
+                                if (conv.id == conversationId) {
+                                    conv.copy(lastMessage = displayText)
+                                } else {
+                                    conv
+                                }
+                            }
+                            
+                            // Mark as successfully decrypted
+                            decryptedConversations.add(conversationId)
+                            android.util.Log.d("ChatViewModel", "Successfully decrypted preview for $conversationId")
+                        } else {
+                            // Decryption failed (no key available)
+                            _conversations.value = _conversations.value.map { conv ->
+                                if (conv.id == conversationId) {
+                                    conv.copy(lastMessage = "🔒 Tin nhắn")
+                                } else {
+                                    conv
+                                }
+                            }
+                            
+                            // Mark as processed to avoid infinite retries
+                            decryptedConversations.add(conversationId)
+                            android.util.Log.w("ChatViewModel", "Failed to decrypt preview for $conversationId (no key)")
                         }
                     },
                     onFailure = { error ->
-                        android.util.Log.e("ChatViewModel", "Failed to decrypt preview for $conversationId", error)
-                        // Keep showing encrypted indicator if decrypt fails
+                        android.util.Log.e("ChatViewModel", "Failed to fetch messages for $conversationId", error)
+                        // Keep showing encrypted indicator if fetch fails
                         _conversations.value = _conversations.value.map { conv ->
                             if (conv.id == conversationId) {
                                 conv.copy(lastMessage = "🔒 Tin nhắn")
@@ -793,10 +932,14 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                                 conv
                             }
                         }
+                        // Mark as processed to avoid retry spam
+                        decryptedConversations.add(conversationId)
                     }
                 )
             } catch (e: Exception) {
                 android.util.Log.e("ChatViewModel", "Error decrypting preview", e)
+                // Mark as processed even on error
+                decryptedConversations.add(conversationId)
             }
         }
     }

@@ -225,8 +225,9 @@ class ChatRepository(private val context: Context) {
     
     /**
      * Check if encryption is available for a conversation
+     * Thread-safe operation
      */
-    fun isEncryptionAvailable(conversationId: String): Boolean {
+    suspend fun isEncryptionAvailable(conversationId: String): Boolean {
         return e2eeManager.isEncryptionAvailable(conversationId)
     }
 }

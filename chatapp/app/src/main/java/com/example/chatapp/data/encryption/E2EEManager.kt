@@ -6,6 +6,8 @@ import com.example.chatapp.data.remote.ApiClient
 import com.example.chatapp.data.remote.model.EncryptedSessionKeyDto
 import com.example.chatapp.data.remote.model.StoreKeysRequest
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import javax.crypto.SecretKey
 
@@ -21,9 +23,14 @@ class E2EEManager(context: Context) {
     private val keyManager = KeyManager(context)
     private val api = ApiClient.apiService
     
+    // Mutex to prevent duplicate setupConversationEncryption calls for same conversation
+    private val setupMutex = Mutex()
+    private val setupInProgress = mutableSetOf<String>()
+    
     /**
-     * Setup encryption for a new conversation
-     * - Generates a new AES session key
+     * Setup encryption for a conversation
+     * - First tries to fetch existing key from server (peer may have already created it)
+     * - If not found, generates a new AES session key
      * - Fetches public keys of all participants
      * - Encrypts session key for each participant
      * - Uploads encrypted keys to server
@@ -38,7 +45,36 @@ class E2EEManager(context: Context) {
         participantIds: List<String>,
         token: String
     ): Boolean = withContext(Dispatchers.IO) {
+        // **CRITICAL**: Prevent duplicate setup calls for same conversation
+        val shouldSetup = setupMutex.withLock {
+            if (setupInProgress.contains(conversationId)) {
+                Log.d(TAG, "Setup already in progress for conversation $conversationId, skipping...")
+                return@withLock false
+            }
+            setupInProgress.add(conversationId)
+            true
+        }
+        
+        if (!shouldSetup) {
+            // Another coroutine is already setting up, wait for it
+            return@withContext false
+        }
+        
         try {
+            // **CRITICAL**: Check if key already exists on server (peer may have created it)
+            val existingKey = try {
+                getSessionKey(conversationId, token, retryCount = 0) // Don't retry here
+            } catch (e: Exception) {
+                null
+            }
+            
+            if (existingKey != null) {
+                Log.d(TAG, "Key already exists for conversation $conversationId (fetched from server)")
+                return@withContext true
+            }
+            
+            Log.d(TAG, "No existing key found, generating new key for conversation $conversationId")
+            
             // Generate new AES session key
             val sessionKey = CryptoManager.generateAESKey()
             
@@ -97,17 +133,27 @@ class E2EEManager(context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "Error setting up conversation encryption", e)
             false
+        } finally {
+            // Remove from in-progress set
+            setupMutex.withLock {
+                setupInProgress.remove(conversationId)
+            }
         }
     }
     
     /**
-     * Get or fetch the session key for a conversation
+     * Get or fetch the session key for a conversation with retry logic
      * 
      * @param conversationId The conversation ID
      * @param token Authentication token
+     * @param retryCount Current retry attempt (for internal use)
      * @return SecretKey if found, null otherwise
      */
-    suspend fun getSessionKey(conversationId: String, token: String): SecretKey? = withContext(Dispatchers.IO) {
+    suspend fun getSessionKey(
+        conversationId: String, 
+        token: String,
+        retryCount: Int = 0
+    ): SecretKey? = withContext(Dispatchers.IO) {
         try {
             // Check if we already have the key locally
             keyManager.getSessionKey(conversationId)?.let { return@withContext it }
@@ -118,6 +164,16 @@ class E2EEManager(context: Context) {
             // Store encrypted key and decrypt it
             keyManager.storeEncryptedSessionKey(conversationId, keyResponse.encryptedSessionKey)
             return@withContext keyManager.getAndDecryptSessionKey(conversationId)
+        } catch (e: retrofit2.HttpException) {
+            // If 404 and haven't retried much, wait and retry (key might be being created)
+            if (e.code() == 404 && retryCount < 2) {
+                Log.d(TAG, "Key not found (404) for conversation $conversationId, retry ${retryCount + 1}/2 after delay")
+                kotlinx.coroutines.delay(1000) // Wait 1 second
+                return@withContext getSessionKey(conversationId, token, retryCount + 1)
+            }
+            
+            Log.e(TAG, "HTTP ${e.code()} getting session key for conversation $conversationId", e)
+            null
         } catch (e: Exception) {
             Log.e(TAG, "Error getting session key for conversation $conversationId", e)
             null
@@ -180,8 +236,9 @@ class E2EEManager(context: Context) {
     
     /**
      * Check if encryption is available for a conversation
+     * Thread-safe operation
      */
-    fun isEncryptionAvailable(conversationId: String): Boolean {
+    suspend fun isEncryptionAvailable(conversationId: String): Boolean {
         return keyManager.hasSessionKey(conversationId)
     }
 }

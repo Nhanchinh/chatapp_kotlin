@@ -8,6 +8,8 @@ import android.util.Base64
 import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.KeyStore
@@ -51,6 +53,9 @@ class KeyManager(private val context: Context) {
     
     // In-memory cache of AES session keys (conversationId -> SecretKey)
     private val sessionKeyCache = mutableMapOf<String, SecretKey>()
+    
+    // Mutex for thread-safe access to session key cache
+    private val sessionKeyCacheMutex = Mutex()
     
     // ========== RSA Keypair Management ==========
     
@@ -134,46 +139,52 @@ class KeyManager(private val context: Context) {
     
     /**
      * Store AES session key for a conversation (in-memory + persistent storage)
+     * Thread-safe with mutex lock
      * @param conversationId The conversation ID
      * @param sessionKey The AES session key
      */
-    fun storeSessionKey(conversationId: String, sessionKey: SecretKey) {
-        // Store in memory cache
-        sessionKeyCache[conversationId] = sessionKey
-        
-        // Persist to encrypted storage
-        try {
-            val keyBase64 = CryptoManager.encodeSecretKey(sessionKey)
-            encryptedPrefs.edit().putString("session_key_$conversationId", keyBase64).apply()
-            Log.d(TAG, "Stored session key for conversation: $conversationId")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error storing session key", e)
+    suspend fun storeSessionKey(conversationId: String, sessionKey: SecretKey) {
+        sessionKeyCacheMutex.withLock {
+            // Store in memory cache
+            sessionKeyCache[conversationId] = sessionKey
+            
+            // Persist to encrypted storage
+            try {
+                val keyBase64 = CryptoManager.encodeSecretKey(sessionKey)
+                encryptedPrefs.edit().putString("session_key_$conversationId", keyBase64).apply()
+                Log.d(TAG, "Stored session key for conversation: $conversationId")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error storing session key", e)
+            }
         }
     }
     
     /**
      * Get AES session key for a conversation
      * First checks memory cache, then loads from persistent storage
+     * Thread-safe with mutex lock
      */
-    fun getSessionKey(conversationId: String): SecretKey? {
-        // Check memory cache first
-        sessionKeyCache[conversationId]?.let { return it }
-        
-        // Load from persistent storage
-        return try {
-            val keyBase64 = encryptedPrefs.getString("session_key_$conversationId", null)
-                ?: return null
+    suspend fun getSessionKey(conversationId: String): SecretKey? {
+        return sessionKeyCacheMutex.withLock {
+            // Check memory cache first
+            sessionKeyCache[conversationId]?.let { return@withLock it }
             
-            val sessionKey = CryptoManager.decodeSecretKey(keyBase64)
-            
-            // Cache in memory
-            sessionKeyCache[conversationId] = sessionKey
-            
-            Log.d(TAG, "Loaded session key for conversation: $conversationId")
-            sessionKey
-        } catch (e: Exception) {
-            Log.e(TAG, "Error loading session key", e)
-            null
+            // Load from persistent storage
+            try {
+                val keyBase64 = encryptedPrefs.getString("session_key_$conversationId", null)
+                    ?: return@withLock null
+                
+                val sessionKey = CryptoManager.decodeSecretKey(keyBase64)
+                
+                // Cache in memory
+                sessionKeyCache[conversationId] = sessionKey
+                
+                Log.d(TAG, "Loaded session key for conversation: $conversationId")
+                sessionKey
+            } catch (e: Exception) {
+                Log.e(TAG, "Error loading session key", e)
+                null
+            }
         }
     }
     
@@ -195,8 +206,9 @@ class KeyManager(private val context: Context) {
     /**
      * Get and decrypt session key for a conversation
      * Retrieves the encrypted session key and decrypts it with our RSA private key
+     * Thread-safe with mutex lock
      */
-    fun getAndDecryptSessionKey(conversationId: String): SecretKey? {
+    suspend fun getAndDecryptSessionKey(conversationId: String): SecretKey? {
         // Check if we already have the decrypted key
         getSessionKey(conversationId)?.let { return it }
         
@@ -226,29 +238,38 @@ class KeyManager(private val context: Context) {
     
     /**
      * Clear session key for a conversation
+     * Thread-safe with mutex lock
      */
-    fun clearSessionKey(conversationId: String) {
-        sessionKeyCache.remove(conversationId)
-        encryptedPrefs.edit()
-            .remove("session_key_$conversationId")
-            .remove("encrypted_session_key_$conversationId")
-            .apply()
+    suspend fun clearSessionKey(conversationId: String) {
+        sessionKeyCacheMutex.withLock {
+            sessionKeyCache.remove(conversationId)
+            encryptedPrefs.edit()
+                .remove("session_key_$conversationId")
+                .remove("encrypted_session_key_$conversationId")
+                .apply()
+        }
     }
     
     /**
      * Clear all session keys
+     * Thread-safe with mutex lock
      */
-    fun clearAllSessionKeys() {
-        sessionKeyCache.clear()
-        encryptedPrefs.edit().clear().apply()
+    suspend fun clearAllSessionKeys() {
+        sessionKeyCacheMutex.withLock {
+            sessionKeyCache.clear()
+            encryptedPrefs.edit().clear().apply()
+        }
     }
     
     /**
      * Check if we have a session key for a conversation
+     * Thread-safe with mutex lock
      */
-    fun hasSessionKey(conversationId: String): Boolean {
-        return sessionKeyCache.containsKey(conversationId) ||
-                encryptedPrefs.contains("session_key_$conversationId")
+    suspend fun hasSessionKey(conversationId: String): Boolean {
+        return sessionKeyCacheMutex.withLock {
+            sessionKeyCache.containsKey(conversationId) ||
+                    encryptedPrefs.contains("session_key_$conversationId")
+        }
     }
 }
 
