@@ -59,6 +59,8 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     // DataStore for storing auth state
     implementation(libs.androidx.datastore.preferences)
+    // Security Crypto for EncryptedSharedPreferences (E2EE)
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
     // Coil for image loading
     implementation("io.coil-kt:coil-compose:2.4.0")
     implementation("androidx.compose.foundation:foundation-layout:1.9.4")

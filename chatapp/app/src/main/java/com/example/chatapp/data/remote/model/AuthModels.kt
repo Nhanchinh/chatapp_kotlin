@@ -12,13 +12,15 @@ data class UserDto(
     val hometown: String? = null,
     @Json(name = "birth_year") val birthYear: Int? = null,
     @Json(name = "is_online") val isOnline: Boolean? = null,
-    @Json(name = "last_seen") val lastSeen: String? = null
+    @Json(name = "last_seen") val lastSeen: String? = null,
+    @Json(name = "public_key") val publicKey: String? = null  // RSA public key for E2EE
 )
 
 data class RegisterRequest(
     val email: String,
     val password: String,
-    @Json(name = "full_name") val fullName: String
+    @Json(name = "full_name") val fullName: String,
+    @Json(name = "public_key") val publicKey: String? = null  // RSA public key for E2EE
 )
 
 data class RegisterResponse(
@@ -40,7 +42,8 @@ data class ProfileUpdateRequest(
     @Json(name = "full_name") val fullName: String? = null,
     val location: String? = null,
     val hometown: String? = null,
-    @Json(name = "birth_year") val birthYear: Int? = null
+    @Json(name = "birth_year") val birthYear: Int? = null,
+    @Json(name = "public_key") val publicKey: String? = null  // RSA public key for E2EE
 )
 
 data class SearchUsersResponse(
@@ -94,6 +97,39 @@ data class PresenceDto(
 
 data class BatchPresenceResponse(
     val presences: List<PresenceDto> = emptyList()
+)
+
+// ========== E2EE Key Exchange Models ==========
+
+data class PublicKeyDto(
+    @Json(name = "user_id") val userId: String,
+    @Json(name = "public_key") val publicKey: String?,
+    @Json(name = "full_name") val fullName: String?
+)
+
+data class PublicKeysResponse(
+    val items: List<PublicKeyDto> = emptyList()
+)
+
+data class EncryptedSessionKeyDto(
+    @Json(name = "user_id") val userId: String,
+    @Json(name = "encrypted_session_key") val encryptedSessionKey: String
+)
+
+data class StoreKeysRequest(
+    @Json(name = "conversation_id") val conversationId: String,
+    val keys: List<EncryptedSessionKeyDto>
+)
+
+data class StoreKeysResponse(
+    val message: String,
+    @Json(name = "conversation_id") val conversationId: String
+)
+
+data class GetKeyResponse(
+    @Json(name = "conversation_id") val conversationId: String,
+    @Json(name = "user_id") val userId: String,
+    @Json(name = "encrypted_session_key") val encryptedSessionKey: String
 )
 
 

@@ -18,6 +18,10 @@ import com.example.chatapp.data.remote.model.PresenceResponse
 import com.example.chatapp.data.remote.model.BatchPresenceResponse
 import com.example.chatapp.data.remote.model.RefreshTokenRequest
 import com.example.chatapp.data.remote.model.RefreshTokenResponse
+import com.example.chatapp.data.remote.model.PublicKeysResponse
+import com.example.chatapp.data.remote.model.StoreKeysRequest
+import com.example.chatapp.data.remote.model.StoreKeysResponse
+import com.example.chatapp.data.remote.model.GetKeyResponse
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.Field
@@ -154,6 +158,25 @@ interface ApiService {
     suspend fun setOffline(
         @Header("Authorization") token: String
     ): FriendActionResponse
+
+    // E2EE Key Exchange API
+    @GET("users/public-keys/batch")
+    suspend fun getPublicKeys(
+        @Header("Authorization") token: String,
+        @Query("user_ids") userIds: String  // Comma-separated user IDs
+    ): PublicKeysResponse
+
+    @POST("conversation-keys/store")
+    suspend fun storeConversationKeys(
+        @Header("Authorization") token: String,
+        @Body body: StoreKeysRequest
+    ): StoreKeysResponse
+
+    @GET("conversation-keys/{conversation_id}/my-key")
+    suspend fun getMyConversationKey(
+        @Header("Authorization") token: String,
+        @Path("conversation_id") conversationId: String
+    ): GetKeyResponse
 }
 
 

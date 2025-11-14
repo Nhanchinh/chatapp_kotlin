@@ -1,6 +1,8 @@
 package com.example.chatapp.data.repository
 
 import android.content.Context
+import android.util.Log
+import com.example.chatapp.data.encryption.E2EEManager
 import com.example.chatapp.data.local.AuthManager
 import com.example.chatapp.data.remote.ApiClient
 import com.example.chatapp.data.remote.WebSocketClient
@@ -10,9 +12,11 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 
 class ChatRepository(private val context: Context) {
+    private val TAG = "ChatRepository"
     private val api = ApiClient.apiService
     private val authManager = AuthManager(context)
     private val webSocketClient = WebSocketClient()
+    private val e2eeManager = E2EEManager(context)
 
     suspend fun getConversations(limit: Int = 20, cursor: String? = null): Result<ConversationsResponse> {
         return try {
@@ -65,12 +69,42 @@ class ChatRepository(private val context: Context) {
         return webSocketClient.connect(userId, token, resumeSince)
     }
 
-    suspend fun sendMessage(to: String, content: String, clientMessageId: String? = null): Result<Unit> {
+    suspend fun sendMessage(
+        to: String, 
+        content: String, 
+        conversationId: String? = null,
+        clientMessageId: String? = null
+    ): Result<Unit> {
         return try {
             val userId = authManager.userId.first()
                 ?: return Result.failure(Exception("User ID not found"))
+            val token = authManager.getValidAccessToken()
+                ?: return Result.failure(Exception("Not authenticated"))
             
-            webSocketClient.sendMessage(userId, to, content, clientMessageId)
+            // Try to encrypt message if we have a conversation with encryption setup
+            var finalContent = content
+            var iv: String? = null
+            var isEncrypted = false
+            
+            if (conversationId != null && e2eeManager.isEncryptionAvailable(conversationId)) {
+                try {
+                    val encrypted = e2eeManager.encryptMessage(content, conversationId, token)
+                    if (encrypted != null) {
+                        finalContent = encrypted.ciphertext
+                        iv = encrypted.iv
+                        isEncrypted = true
+                        Log.d(TAG, "Message encrypted successfully")
+                    } else {
+                        Log.w(TAG, "Encryption failed, sending plaintext")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error encrypting message, sending plaintext", e)
+                }
+            } else {
+                Log.d(TAG, "No encryption available for conversation, sending plaintext")
+            }
+            
+            webSocketClient.sendMessage(userId, to, finalContent, clientMessageId, iv, isEncrypted)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -131,7 +165,7 @@ class ChatRepository(private val context: Context) {
         return try {
             val token = authManager.getValidAccessToken() ?: return Result.failure(Exception("Not authenticated"))
             val response = api.deleteConversation("Bearer $token", conversationId)
-            Result.success(response)
+             Result.success(response)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -146,6 +180,54 @@ class ChatRepository(private val context: Context) {
             // Ignore errors khi set offline (có thể token đã expired)
             Result.success(Unit)
         }
+    }
+    
+    /**
+     * Setup E2EE encryption for a conversation
+     * Call this when opening a conversation for the first time
+     */
+    suspend fun setupConversationEncryption(
+        conversationId: String,
+        participantIds: List<String>
+    ): Result<Boolean> {
+        return try {
+            val token = authManager.getValidAccessToken()
+                ?: return Result.failure(Exception("Not authenticated"))
+            
+            val success = e2eeManager.setupConversationEncryption(
+                conversationId,
+                participantIds,
+                token
+            )
+            Result.success(success)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting up conversation encryption", e)
+            Result.failure(e)
+        }
+    }
+    
+    /**
+     * Decrypt a received message
+     */
+    suspend fun decryptMessage(
+        ciphertext: String,
+        iv: String,
+        conversationId: String
+    ): String? {
+        return try {
+            val token = authManager.getValidAccessToken() ?: return null
+            e2eeManager.decryptMessage(ciphertext, iv, conversationId, token)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error decrypting message", e)
+            null
+        }
+    }
+    
+    /**
+     * Check if encryption is available for a conversation
+     */
+    fun isEncryptionAvailable(conversationId: String): Boolean {
+        return e2eeManager.isEncryptionAvailable(conversationId)
     }
 }
 

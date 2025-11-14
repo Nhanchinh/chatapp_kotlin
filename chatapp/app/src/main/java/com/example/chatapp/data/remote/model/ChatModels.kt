@@ -26,7 +26,9 @@ data class MessageDto(
     @Json(name = "conversation_id") val conversationId: String? = null,
     val delivered: Boolean = false,
     val seen: Boolean = false,
-    @Json(name = "client_message_id") val clientMessageId: String? = null
+    @Json(name = "client_message_id") val clientMessageId: String? = null,
+    val iv: String? = null,  // Initialization vector for AES-GCM
+    @Json(name = "is_encrypted") val isEncrypted: Boolean = false
 )
 
 data class MessagesResponse(
@@ -56,7 +58,9 @@ data class WebSocketMessage(
     @Json(name = "message_id") val messageId: String? = null,
     @Json(name = "conversation_id") val conversationId: String? = null,
     @Json(name = "client_message_id") val clientMessageId: String? = null,
-    val ack: MessageAck? = null
+    val ack: MessageAck? = null,
+    val iv: String? = null,  // Initialization vector for AES-GCM
+    @Json(name = "is_encrypted") val isEncrypted: Boolean = false
 )
 
 data class MessageAck(
@@ -73,6 +77,8 @@ data class WebSocketMessageResponse(
     val type: String,
     val from: String,
     val content: String,
-    val ack: MessageAck
+    val ack: MessageAck,
+    val iv: String? = null,
+    @Json(name = "is_encrypted") val isEncrypted: Boolean = false
 )
 

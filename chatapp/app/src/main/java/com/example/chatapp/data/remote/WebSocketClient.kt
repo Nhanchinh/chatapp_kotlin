@@ -101,7 +101,9 @@ class WebSocketClient {
                                             type = "message",
                                             from = genericMessage.from,
                                             content = genericMessage.content,
-                                            ack = ack
+                                            ack = ack,
+                                            iv = genericMessage.iv,
+                                            isEncrypted = genericMessage.isEncrypted
                                         )
                                         trySend(WebSocketEvent.NewMessage(fallbackMessage))
                                         return
@@ -179,13 +181,22 @@ class WebSocketClient {
         }
     }
 
-    suspend fun sendMessage(from: String, to: String, content: String, clientMessageId: String? = null): Result<Unit> {
+    suspend fun sendMessage(
+        from: String, 
+        to: String, 
+        content: String, 
+        clientMessageId: String? = null,
+        iv: String? = null,
+        isEncrypted: Boolean = false
+    ): Result<Unit> {
         return suspendCancellableCoroutine { continuation ->
             val message = WebSocketMessage(
                 from = from,
                 to = to,
                 content = content,
-                clientMessageId = clientMessageId ?: UUID.randomUUID().toString()
+                clientMessageId = clientMessageId ?: UUID.randomUUID().toString(),
+                iv = iv,
+                isEncrypted = isEncrypted
             )
 
             val messageAdapter = moshi.adapter(WebSocketMessage::class.java)

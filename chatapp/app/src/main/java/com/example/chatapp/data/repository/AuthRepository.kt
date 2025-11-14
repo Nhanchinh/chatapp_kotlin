@@ -1,6 +1,8 @@
 package com.example.chatapp.data.repository
 
 import android.content.Context
+import com.example.chatapp.data.encryption.CryptoManager
+import com.example.chatapp.data.encryption.KeyManager
 import com.example.chatapp.data.local.AuthManager
 import com.example.chatapp.data.remote.ApiClient
 import com.example.chatapp.data.remote.model.LoginResponse
@@ -11,10 +13,23 @@ import com.example.chatapp.data.remote.model.UserDto
 class AuthRepository(context: Context) {
     private val api = ApiClient.apiService
     private val authManager = AuthManager(context)
+    private val keyManager = KeyManager(context)
 
     suspend fun register(email: String, password: String, fullName: String): Result<Unit> {
         return try {
-            api.register(RegisterRequest(email = email, password = password, fullName = fullName))
+            // Generate RSA keypair for E2EE
+            val publicKey = keyManager.generateAndStoreRSAKeyPair()
+            val publicKeyBase64 = CryptoManager.encodePublicKey(publicKey)
+            
+            // Register with public key
+            api.register(
+                RegisterRequest(
+                    email = email,
+                    password = password,
+                    fullName = fullName,
+                    publicKey = publicKeyBase64
+                )
+            )
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -41,6 +56,25 @@ class AuthRepository(context: Context) {
                     hometown = user.hometown,
                     birthYear = user.birthYear
                 )
+                
+                // If user doesn't have RSA keypair yet (e.g., registered before E2EE), generate one
+                if (!keyManager.hasRSAKeyPair()) {
+                    try {
+                        val publicKey = keyManager.generateAndStoreRSAKeyPair()
+                        val publicKeyBase64 = CryptoManager.encodePublicKey(publicKey)
+                        // Upload public key to server
+                        val token = authManager.getValidAccessToken()
+                        if (token != null) {
+                            api.updateProfile(
+                                "Bearer $token",
+                                ProfileUpdateRequest(publicKey = publicKeyBase64)
+                            )
+                        }
+                    } catch (e: Exception) {
+                        // Log but don't fail login if key generation fails
+                        android.util.Log.e("AuthRepository", "Failed to generate RSA keypair", e)
+                    }
+                }
             }
             Result.success(response)
         } catch (e: Exception) {
