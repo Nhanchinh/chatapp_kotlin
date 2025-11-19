@@ -33,8 +33,8 @@ class KeyManager(private val context: Context) {
         load(null)
     }
     
-    // Alias for RSA keypair in Android Keystore
-    private val RSA_KEY_ALIAS = "e2ee_rsa_key"
+    private val RSA_KEY_ALIAS_PREFIX = "e2ee_rsa_key_"
+    private val ACTIVE_USER_PREF_KEY = "active_user_id"
     
     // EncryptedSharedPreferences for storing sensitive data
     private val encryptedPrefs: SharedPreferences by lazy {
@@ -51,11 +51,34 @@ class KeyManager(private val context: Context) {
         )
     }
     
-    // In-memory cache of AES session keys (conversationId -> SecretKey)
+    // In-memory cache of AES session keys (conversationId -> SecretKey) per user
     private val sessionKeyCache = mutableMapOf<String, SecretKey>()
     
     // Mutex for thread-safe access to session key cache
     private val sessionKeyCacheMutex = Mutex()
+
+    private fun rsaAlias(userId: String) = "$RSA_KEY_ALIAS_PREFIX$userId"
+    private fun publicKeyPref(userId: String) = "rsa_public_key_$userId"
+    private fun sessionKeyPref(userId: String, conversationId: String) = "session_key_${userId}_$conversationId"
+    private fun encryptedSessionKeyPref(userId: String, conversationId: String) = "encrypted_session_key_${userId}_$conversationId"
+    private fun cacheKey(userId: String, conversationId: String) = "${userId}_$conversationId"
+
+    fun setActiveUser(userId: String?) {
+        encryptedPrefs.edit().apply {
+            if (userId == null) {
+                remove(ACTIVE_USER_PREF_KEY)
+            } else {
+                putString(ACTIVE_USER_PREF_KEY, userId)
+            }
+        }.apply()
+    }
+
+    fun getActiveUserId(): String? = encryptedPrefs.getString(ACTIVE_USER_PREF_KEY, null)
+
+    private fun requireActiveUserId(): String {
+        return getActiveUserId()
+            ?: throw IllegalStateException("Active user not set for KeyManager")
+    }
     
     // ========== RSA Keypair Management ==========
     
@@ -64,9 +87,11 @@ class KeyManager(private val context: Context) {
      * Returns the public key (to be uploaded to server)
      */
     fun generateAndStoreRSAKeyPair(): PublicKey {
-        // Delete existing key if any
-        if (keyStore.containsAlias(RSA_KEY_ALIAS)) {
-            keyStore.deleteEntry(RSA_KEY_ALIAS)
+        val userId = requireActiveUserId()
+        val alias = rsaAlias(userId)
+
+        if (keyStore.containsAlias(alias)) {
+            keyStore.deleteEntry(alias)
         }
         
         val keyPairGenerator = KeyPairGenerator.getInstance(
@@ -75,7 +100,7 @@ class KeyManager(private val context: Context) {
         )
         
         val keyGenParameterSpec = KeyGenParameterSpec.Builder(
-            RSA_KEY_ALIAS,
+            alias,
             KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
         )
             .setKeySize(2048)
@@ -89,9 +114,9 @@ class KeyManager(private val context: Context) {
         
         // Cache public key for quick access
         val publicKeyBase64 = CryptoManager.encodePublicKey(keyPair.public)
-        encryptedPrefs.edit().putString("rsa_public_key", publicKeyBase64).apply()
+        encryptedPrefs.edit().putString(publicKeyPref(userId), publicKeyBase64).apply()
         
-        Log.d(TAG, "Generated new RSA keypair")
+        Log.d(TAG, "Generated new RSA keypair for user $userId")
         return keyPair.public
     }
     
@@ -99,7 +124,8 @@ class KeyManager(private val context: Context) {
      * Check if RSA keypair exists
      */
     fun hasRSAKeyPair(): Boolean {
-        return keyStore.containsAlias(RSA_KEY_ALIAS)
+        val userId = getActiveUserId() ?: return false
+        return keyStore.containsAlias(rsaAlias(userId))
     }
     
     /**
@@ -107,7 +133,8 @@ class KeyManager(private val context: Context) {
      */
     fun getRSAPrivateKey(): PrivateKey? {
         return try {
-            val entry = keyStore.getEntry(RSA_KEY_ALIAS, null) as? KeyStore.PrivateKeyEntry
+            val alias = rsaAlias(requireActiveUserId())
+            val entry = keyStore.getEntry(alias, null) as? KeyStore.PrivateKeyEntry
             entry?.privateKey
         } catch (e: Exception) {
             Log.e(TAG, "Error getting RSA private key", e)
@@ -120,7 +147,7 @@ class KeyManager(private val context: Context) {
      */
     fun getRSAPublicKey(): PublicKey? {
         return try {
-            val publicKeyBase64 = encryptedPrefs.getString("rsa_public_key", null) ?: return null
+            val publicKeyBase64 = encryptedPrefs.getString(publicKeyPref(requireActiveUserId()), null) ?: return null
             CryptoManager.decodePublicKey(publicKeyBase64)
         } catch (e: Exception) {
             Log.e(TAG, "Error getting RSA public key", e)
@@ -132,7 +159,8 @@ class KeyManager(private val context: Context) {
      * Get RSA public key as Base64 string (for uploading to server)
      */
     fun getRSAPublicKeyBase64(): String? {
-        return encryptedPrefs.getString("rsa_public_key", null)
+        val userId = getActiveUserId() ?: return null
+        return encryptedPrefs.getString(publicKeyPref(userId), null)
     }
     
     // ========== Session Key Management ==========
@@ -144,15 +172,17 @@ class KeyManager(private val context: Context) {
      * @param sessionKey The AES session key
      */
     suspend fun storeSessionKey(conversationId: String, sessionKey: SecretKey) {
+        val userId = requireActiveUserId()
+        val cacheKey = cacheKey(userId, conversationId)
         sessionKeyCacheMutex.withLock {
             // Store in memory cache
-            sessionKeyCache[conversationId] = sessionKey
+            sessionKeyCache[cacheKey] = sessionKey
             
             // Persist to encrypted storage
             try {
                 val keyBase64 = CryptoManager.encodeSecretKey(sessionKey)
-                encryptedPrefs.edit().putString("session_key_$conversationId", keyBase64).apply()
-                Log.d(TAG, "Stored session key for conversation: $conversationId")
+                encryptedPrefs.edit().putString(sessionKeyPref(userId, conversationId), keyBase64).apply()
+                Log.d(TAG, "Stored session key for user $userId conversation: $conversationId")
             } catch (e: Exception) {
                 Log.e(TAG, "Error storing session key", e)
             }
@@ -165,21 +195,23 @@ class KeyManager(private val context: Context) {
      * Thread-safe with mutex lock
      */
     suspend fun getSessionKey(conversationId: String): SecretKey? {
+        val userId = requireActiveUserId()
+        val cacheKey = cacheKey(userId, conversationId)
         return sessionKeyCacheMutex.withLock {
             // Check memory cache first
-            sessionKeyCache[conversationId]?.let { return@withLock it }
+            sessionKeyCache[cacheKey]?.let { return@withLock it }
             
             // Load from persistent storage
             try {
-                val keyBase64 = encryptedPrefs.getString("session_key_$conversationId", null)
+                val keyBase64 = encryptedPrefs.getString(sessionKeyPref(userId, conversationId), null)
                     ?: return@withLock null
                 
                 val sessionKey = CryptoManager.decodeSecretKey(keyBase64)
                 
                 // Cache in memory
-                sessionKeyCache[conversationId] = sessionKey
+                sessionKeyCache[cacheKey] = sessionKey
                 
-                Log.d(TAG, "Loaded session key for conversation: $conversationId")
+                Log.d(TAG, "Loaded session key for user $userId conversation: $conversationId")
                 sessionKey
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading session key", e)
@@ -193,11 +225,12 @@ class KeyManager(private val context: Context) {
      * This is the session key encrypted with our RSA public key
      */
     fun storeEncryptedSessionKey(conversationId: String, encryptedKeyBase64: String) {
+        val userId = requireActiveUserId()
         try {
             encryptedPrefs.edit()
-                .putString("encrypted_session_key_$conversationId", encryptedKeyBase64)
+                .putString(encryptedSessionKeyPref(userId, conversationId), encryptedKeyBase64)
                 .apply()
-            Log.d(TAG, "Stored encrypted session key for conversation: $conversationId")
+            Log.d(TAG, "Stored encrypted session key for user $userId conversation: $conversationId")
         } catch (e: Exception) {
             Log.e(TAG, "Error storing encrypted session key", e)
         }
@@ -212,8 +245,9 @@ class KeyManager(private val context: Context) {
         // Check if we already have the decrypted key
         getSessionKey(conversationId)?.let { return it }
         
+        val userId = requireActiveUserId()
         // Get encrypted session key
-        val encryptedKeyBase64 = encryptedPrefs.getString("encrypted_session_key_$conversationId", null)
+        val encryptedKeyBase64 = encryptedPrefs.getString(encryptedSessionKeyPref(userId, conversationId), null)
             ?: return null
         
         // Decrypt with our RSA private key
@@ -228,7 +262,7 @@ class KeyManager(private val context: Context) {
             // Cache the decrypted key
             storeSessionKey(conversationId, sessionKey)
             
-            Log.d(TAG, "Decrypted session key for conversation: $conversationId")
+            Log.d(TAG, "Decrypted session key for user $userId conversation: $conversationId")
             sessionKey
         } catch (e: Exception) {
             Log.e(TAG, "Error decrypting session key", e)
@@ -241,23 +275,32 @@ class KeyManager(private val context: Context) {
      * Thread-safe with mutex lock
      */
     suspend fun clearSessionKey(conversationId: String) {
+        val userId = getActiveUserId() ?: return
+        val cacheKey = cacheKey(userId, conversationId)
         sessionKeyCacheMutex.withLock {
-            sessionKeyCache.remove(conversationId)
+            sessionKeyCache.remove(cacheKey)
             encryptedPrefs.edit()
-                .remove("session_key_$conversationId")
-                .remove("encrypted_session_key_$conversationId")
+                .remove(sessionKeyPref(userId, conversationId))
+                .remove(encryptedSessionKeyPref(userId, conversationId))
                 .apply()
         }
     }
     
     /**
-     * Clear all session keys
+     * Clear all session keys for the active user
      * Thread-safe with mutex lock
      */
     suspend fun clearAllSessionKeys() {
+        val userId = getActiveUserId() ?: return
         sessionKeyCacheMutex.withLock {
-            sessionKeyCache.clear()
-            encryptedPrefs.edit().clear().apply()
+            sessionKeyCache.keys.removeAll { it.startsWith("${userId}_") }
+            val editor = encryptedPrefs.edit()
+            val sessionPrefix = "session_key_${userId}_"
+            val encryptedPrefix = "encrypted_session_key_${userId}_"
+            encryptedPrefs.all.keys
+                .filter { it.startsWith(sessionPrefix) || it.startsWith(encryptedPrefix) }
+                .forEach { editor.remove(it) }
+            editor.apply()
         }
     }
     
@@ -266,9 +309,11 @@ class KeyManager(private val context: Context) {
      * Thread-safe with mutex lock
      */
     suspend fun hasSessionKey(conversationId: String): Boolean {
+        val userId = getActiveUserId() ?: return false
+        val cacheKey = cacheKey(userId, conversationId)
         return sessionKeyCacheMutex.withLock {
-            sessionKeyCache.containsKey(conversationId) ||
-                    encryptedPrefs.contains("session_key_$conversationId")
+            sessionKeyCache.containsKey(cacheKey) ||
+                    encryptedPrefs.contains(sessionKeyPref(userId, conversationId))
         }
     }
 }

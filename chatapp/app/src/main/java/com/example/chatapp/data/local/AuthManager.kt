@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.example.chatapp.data.encryption.KeyManager
 import com.example.chatapp.data.remote.ApiClient
 import com.example.chatapp.data.remote.model.RefreshTokenRequest
 import kotlinx.coroutines.flow.Flow
@@ -179,6 +180,9 @@ class AuthManager(private val context: Context) {
      * Clear access token and reset login state (logout)
      */
     suspend fun logout() {
+        val keyManager = KeyManager(context)
+        keyManager.clearAllSessionKeys()
+        keyManager.setActiveUser(null)
         context.dataStore.edit { preferences ->
             preferences.remove(ACCESS_TOKEN_KEY)
             preferences[IS_LOGGED_IN_KEY] = false

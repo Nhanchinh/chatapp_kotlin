@@ -18,17 +18,13 @@ class AuthRepository(context: Context) {
 
     suspend fun register(email: String, password: String, fullName: String): Result<Unit> {
         return try {
-            // Generate RSA keypair for E2EE
-            val publicKey = keyManager.generateAndStoreRSAKeyPair()
-            val publicKeyBase64 = CryptoManager.encodePublicKey(publicKey)
-            
-            // Register with public key
+            // Public key will be provisioned on first login (requires_public_key flag)
             api.register(
                 RegisterRequest(
                     email = email,
                     password = password,
                     fullName = fullName,
-                    publicKey = publicKeyBase64
+                    publicKey = null
                 )
             )
             Result.success(Unit)
@@ -47,6 +43,10 @@ class AuthRepository(context: Context) {
                 refreshTokenExpiresInSeconds = response.refreshExpiresIn
             )
             response.user?.let { user ->
+                val userId = user.id
+                if (!userId.isNullOrBlank()) {
+                    keyManager.setActiveUser(userId)
+                }
                 authManager.saveUserProfile(
                     id = user.id,
                     email = user.email,
