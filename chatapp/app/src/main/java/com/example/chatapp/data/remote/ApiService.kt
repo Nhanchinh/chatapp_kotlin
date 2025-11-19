@@ -24,6 +24,9 @@ import com.example.chatapp.data.remote.model.StoreKeysResponse
 import com.example.chatapp.data.remote.model.GetKeyResponse
 import com.example.chatapp.data.remote.model.CreateConversationRequest
 import com.example.chatapp.data.remote.model.CreateConversationResponse
+import com.example.chatapp.data.remote.model.MediaDownloadResponse
+import com.example.chatapp.data.remote.model.MediaUploadRequest
+import com.example.chatapp.data.remote.model.MediaUploadResponse
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.Field
@@ -166,6 +169,19 @@ interface ApiService {
     suspend fun setOffline(
         @Header("Authorization") token: String
     ): FriendActionResponse
+
+    // Media API
+    @POST("media")
+    suspend fun uploadMedia(
+        @Header("Authorization") token: String,
+        @Body body: MediaUploadRequest
+    ): MediaUploadResponse
+
+    @GET("media/{media_id}")
+    suspend fun downloadMedia(
+        @Header("Authorization") token: String,
+        @Path("media_id") mediaId: String
+    ): MediaDownloadResponse
 
     // E2EE Key Exchange API
     @GET("users/public-keys/batch")

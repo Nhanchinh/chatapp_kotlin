@@ -94,18 +94,21 @@ object CryptoManager {
      * Returns: AESEncryptedData containing ciphertext and IV (both Base64-encoded)
      */
     fun aesEncrypt(plaintext: String, secretKey: SecretKey): AESEncryptedData {
+        val plaintextBytes = plaintext.toByteArray(Charsets.UTF_8)
+        return aesEncryptBytes(plaintextBytes, secretKey)
+    }
+
+    fun aesEncryptBytes(plaintext: ByteArray, secretKey: SecretKey): AESEncryptedData {
         val cipher = Cipher.getInstance(AES_TRANSFORMATION)
-        
-        // Generate random IV
+
         val iv = ByteArray(GCM_IV_SIZE)
         SecureRandom().nextBytes(iv)
-        
+
         val gcmSpec = GCMParameterSpec(GCM_TAG_SIZE, iv)
         cipher.init(Cipher.ENCRYPT_MODE, secretKey, gcmSpec)
-        
-        val plaintextBytes = plaintext.toByteArray(Charsets.UTF_8)
-        val ciphertext = cipher.doFinal(plaintextBytes)
-        
+
+        val ciphertext = cipher.doFinal(plaintext)
+
         return AESEncryptedData(
             ciphertext = Base64.encodeToString(ciphertext, Base64.NO_WRAP),
             iv = Base64.encodeToString(iv, Base64.NO_WRAP)
@@ -117,16 +120,20 @@ object CryptoManager {
      * Input: ciphertext and IV (both Base64-encoded)
      */
     fun aesDecrypt(ciphertextBase64: String, ivBase64: String, secretKey: SecretKey): String {
+        val plaintext = aesDecryptToBytes(ciphertextBase64, ivBase64, secretKey)
+        return String(plaintext, Charsets.UTF_8)
+    }
+
+    fun aesDecryptToBytes(ciphertextBase64: String, ivBase64: String, secretKey: SecretKey): ByteArray {
         val cipher = Cipher.getInstance(AES_TRANSFORMATION)
-        
+
         val iv = Base64.decode(ivBase64, Base64.NO_WRAP)
         val ciphertext = Base64.decode(ciphertextBase64, Base64.NO_WRAP)
-        
+
         val gcmSpec = GCMParameterSpec(GCM_TAG_SIZE, iv)
         cipher.init(Cipher.DECRYPT_MODE, secretKey, gcmSpec)
-        
-        val plaintext = cipher.doFinal(ciphertext)
-        return String(plaintext, Charsets.UTF_8)
+
+        return cipher.doFinal(ciphertext)
     }
     
     // ========== Key Encoding/Decoding ==========

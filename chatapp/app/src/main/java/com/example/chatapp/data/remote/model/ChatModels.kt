@@ -28,7 +28,10 @@ data class MessageDto(
     val seen: Boolean = false,
     @Json(name = "client_message_id") val clientMessageId: String? = null,
     val iv: String? = null,  // Initialization vector for AES-GCM
-    @Json(name = "is_encrypted") val isEncrypted: Boolean = false
+    @Json(name = "is_encrypted") val isEncrypted: Boolean = false,
+    @Json(name = "media_id") val mediaId: String? = null,
+    @Json(name = "media_mime_type") val mediaMimeType: String? = null,
+    @Json(name = "media_size") val mediaSize: Long? = null
 )
 
 data class MessagesResponse(
@@ -60,13 +63,19 @@ data class WebSocketMessage(
     @Json(name = "client_message_id") val clientMessageId: String? = null,
     val ack: MessageAck? = null,
     val iv: String? = null,  // Initialization vector for AES-GCM
-    @Json(name = "is_encrypted") val isEncrypted: Boolean = false
+    @Json(name = "is_encrypted") val isEncrypted: Boolean = false,
+    @Json(name = "media_id") val mediaId: String? = null,
+    @Json(name = "media_mime_type") val mediaMimeType: String? = null,
+    @Json(name = "media_size") val mediaSize: Long? = null
 )
 
 data class MessageAck(
     @Json(name = "message_id") val messageId: String,
     @Json(name = "conversation_id") val conversationId: String,
-    @Json(name = "client_message_id") val clientMessageId: String? = null
+    @Json(name = "client_message_id") val clientMessageId: String? = null,
+    @Json(name = "media_id") val mediaId: String? = null,
+    @Json(name = "media_mime_type") val mediaMimeType: String? = null,
+    @Json(name = "media_size") val mediaSize: Long? = null
 )
 
 data class WebSocketAckResponse(
@@ -79,7 +88,31 @@ data class WebSocketMessageResponse(
     val content: String,
     val ack: MessageAck,
     val iv: String? = null,
-    @Json(name = "is_encrypted") val isEncrypted: Boolean = false
+    @Json(name = "is_encrypted") val isEncrypted: Boolean = false,
+    @Json(name = "media_id") val mediaId: String? = null,
+    @Json(name = "media_mime_type") val mediaMimeType: String? = null,
+    @Json(name = "media_size") val mediaSize: Long? = null
+)
+
+data class MediaUploadRequest(
+    @Json(name = "conversation_id") val conversationId: String,
+    @Json(name = "media_data") val mediaData: String,
+    val iv: String,
+    @Json(name = "mime_type") val mimeType: String,
+    val size: Int
+)
+
+data class MediaUploadResponse(
+    @Json(name = "media_id") val mediaId: String
+)
+
+data class MediaDownloadResponse(
+    @Json(name = "media_id") val mediaId: String,
+    @Json(name = "conversation_id") val conversationId: String,
+    @Json(name = "mime_type") val mimeType: String,
+    val size: Int,
+    val iv: String,
+    @Json(name = "media_data") val mediaData: String
 )
 
 // Create Conversation Models

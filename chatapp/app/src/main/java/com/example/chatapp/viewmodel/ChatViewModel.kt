@@ -1,11 +1,14 @@
 package com.example.chatapp.viewmodel
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.chatapp.data.local.AuthManager
 import com.example.chatapp.data.model.Conversation
+import com.example.chatapp.data.model.MediaItem
 import com.example.chatapp.data.model.Message
+import com.example.chatapp.data.model.MediaStatus
 import com.example.chatapp.data.repository.ChatRepository
 import com.example.chatapp.data.remote.WebSocketEvent
 import com.example.chatapp.data.remote.model.MessageAck
@@ -66,6 +69,15 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val _webSocketConnected = MutableStateFlow(false)
     val webSocketConnected: StateFlow<Boolean> = _webSocketConnected.asStateFlow()
 
+    private val _mediaGallery = MutableStateFlow<List<MediaItem>>(emptyList())
+    val mediaGallery: StateFlow<List<MediaItem>> = _mediaGallery.asStateFlow()
+
+    private val _mediaGalleryLoading = MutableStateFlow(false)
+    val mediaGalleryLoading: StateFlow<Boolean> = _mediaGalleryLoading.asStateFlow()
+
+    private val _mediaGalleryError = MutableStateFlow<String?>(null)
+    val mediaGalleryError: StateFlow<String?> = _mediaGalleryError.asStateFlow()
+
     private var webSocketJob: Job? = null
 
     // E2EE: Cache conversations đã decrypt thành công (tránh decrypt lại mỗi lần refresh)
@@ -73,6 +85,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     
     // E2EE: Track conversations đã try auto-setup (tránh infinite loop)
     private val autoSetupAttempted = mutableSetOf<String>()
+
+    // Track media downloads to avoid duplicate requests
+    private val downloadingMediaIds = mutableSetOf<String>()
 
     private val currentUserId: StateFlow<String?> = authManager.userId
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
@@ -327,6 +342,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         _currentContactName.value = null
         _messages.value = emptyList()
         _typingUsers.value = emptySet()
+        clearMediaGallery()
     }
     
     /**
@@ -364,6 +380,33 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun loadMediaGallery(conversationId: String) {
+        viewModelScope.launch {
+            _mediaGalleryLoading.value = true
+            _mediaGalleryError.value = null
+            repository.getMediaGallery(conversationId).fold(
+                onSuccess = { items ->
+                    _mediaGallery.value = items
+                    _mediaGalleryLoading.value = false
+                },
+                onFailure = { error ->
+                    _mediaGalleryLoading.value = false
+                    _mediaGalleryError.value = error.message
+                }
+            )
+        }
+    }
+
+    fun clearMediaGallery() {
+        _mediaGallery.value = emptyList()
+        _mediaGalleryError.value = null
+        _mediaGalleryLoading.value = false
+    }
+
+    suspend fun ensureMediaCached(mediaId: String, conversationId: String): String? {
+        return repository.ensureMediaCached(mediaId, conversationId).getOrNull()
+    }
+
     private fun loadMessages(conversationId: String, limit: Int = 50, cursor: String? = null) {
         viewModelScope.launch {
             _messagesLoading.value = true
@@ -376,8 +419,15 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     var hasEncryptedMessages = false
                     var failedToDecrypt = false
                     
-                    _messages.value = response.items.map { dto ->
+                    val mappedMessages = response.items.map { dto ->
                         // Decrypt message if encrypted
+                        val isMediaMessage = dto.mediaId != null
+                        val baseText = if (isMediaMessage) {
+                            if (dto.senderId == me) "[Bạn đã gửi một ảnh]" else "[Đã gửi một ảnh]"
+                        } else {
+                            dto.content
+                        }
+
                         val displayText = if (dto.isEncrypted && dto.iv != null) {
                             hasEncryptedMessages = true
                             val decrypted = repository.decryptMessage(dto.content, dto.iv, conversationId)
@@ -388,11 +438,17 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                                 decrypted
                             }
                         } else {
-                            dto.content
+                            baseText
                         }
                         
                         // Resolve sender name from friends map
                         val senderDisplayName = friends[dto.senderId] ?: dto.senderId
+                        val mediaStatus = when {
+                            dto.mediaId == null -> MediaStatus.NONE
+                            dto.senderId == me -> MediaStatus.READY
+                            else -> MediaStatus.DOWNLOADING
+                        }
+                        val localMediaPath = dto.mediaId?.let { repository.getCachedMediaPath(it) }
                         Message(
                             id = dto.id,
                             text = displayText,
@@ -404,9 +460,16 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                             conversationId = dto.conversationId,
                             delivered = dto.delivered,
                             seen = dto.seen,
-                            clientMessageId = dto.clientMessageId
+                            clientMessageId = dto.clientMessageId,
+                            mediaId = dto.mediaId,
+                            mediaMimeType = dto.mediaMimeType,
+                            mediaSize = dto.mediaSize,
+                            mediaLocalPath = localMediaPath,
+                            mediaStatus = mediaStatus
                         )
                     }
+                    _messages.value = mappedMessages
+                    scheduleMediaDownloads(mappedMessages)
                     
                     // **AUTO-FIX**: If we have encrypted messages but failed to decrypt, 
                     // setup encryption (this handles case where peer created key but we don't have it)
@@ -508,6 +571,89 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun sendImage(uri: Uri) {
+        val to = _currentContactId.value ?: return
+        var conversationId = _currentConversationId.value
+        viewModelScope.launch {
+            val me = currentUserId.value ?: return@launch
+
+            if (conversationId == null) {
+                android.util.Log.d("ChatViewModel", "No conversation ID, creating new conversation (media)...")
+                repository.createConversation(to).fold(
+                    onSuccess = { newConversationId ->
+                        conversationId = newConversationId
+                        _currentConversationId.value = newConversationId
+                        android.util.Log.d("ChatViewModel", "Created conversation: $newConversationId")
+                    },
+                    onFailure = { error ->
+                        android.util.Log.e("ChatViewModel", "Failed to create conversation: ${error.message}")
+                        _messagesError.value = "Failed to create conversation: ${error.message}"
+                        return@launch
+                    }
+                )
+            }
+
+            if (conversationId == null) {
+                android.util.Log.e("ChatViewModel", "Conversation ID is still null, cannot send media")
+                return@launch
+            }
+
+            val clientMessageId = UUID.randomUUID().toString()
+            val friends = friendsMap.value
+            val myDisplayName = friends[me] ?: me
+            val optimistic = Message(
+                id = "temp_media_$clientMessageId",
+                text = "[Đang gửi ảnh]",
+                timestamp = System.currentTimeMillis(),
+                isFromMe = true,
+                senderName = myDisplayName,
+                senderId = me,
+                receiverId = to,
+                clientMessageId = clientMessageId,
+                conversationId = conversationId,
+                mediaLocalPath = uri.toString(),
+                mediaStatus = MediaStatus.UPLOADING
+            )
+            _messages.value = _messages.value + optimistic
+
+            repository.sendMediaMessage(
+                to = to,
+                conversationId = conversationId!!,
+                clientMessageId = clientMessageId,
+                mediaUri = uri
+            ).fold(
+                onSuccess = { mediaResult ->
+                    updateMessageByClientMessageId(clientMessageId) { msg ->
+                        msg.copy(
+                            mediaId = mediaResult.mediaId,
+                            mediaMimeType = mediaResult.mimeType,
+                            mediaSize = mediaResult.size,
+                            mediaLocalPath = mediaResult.localPath,
+                            mediaStatus = MediaStatus.READY,
+                            text = "[Đã gửi ảnh]"
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    updateMessageByClientMessageId(clientMessageId) { msg ->
+                        msg.copy(
+                            mediaStatus = MediaStatus.FAILED,
+                            text = "[Gửi ảnh thất bại]"
+                        )
+                    }
+                    _messagesError.value = error.message
+                }
+            )
+        }
+    }
+
+    fun retryDownloadMedia(messageId: String) {
+        val message = _messages.value.firstOrNull { it.id == messageId }
+        if (message?.mediaId != null && !message.conversationId.isNullOrBlank()) {
+            downloadMediaForMessage(message.id, message.mediaId, message.conversationId!!)
+        }
+    }
+
     fun markRead(fromUserId: String? = null, conversationId: String? = null) {
         viewModelScope.launch { repository.markRead(fromUserId, conversationId) }
     }
@@ -601,7 +747,16 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         // Update optimistic message id and ensure conversation id is stored
         _messages.value = _messages.value.map { msg ->
             if (msg.clientMessageId == ack.clientMessageId) {
-                msg.copy(id = ack.messageId, conversationId = ack.conversationId)
+                var updated = msg.copy(id = ack.messageId, conversationId = ack.conversationId)
+                if (ack.mediaId != null) {
+                    updated = updated.copy(
+                        mediaId = ack.mediaId,
+                        mediaMimeType = ack.mediaMimeType,
+                        mediaSize = ack.mediaSize,
+                        mediaStatus = if (updated.mediaStatus == MediaStatus.UPLOADING) MediaStatus.READY else updated.mediaStatus
+                    )
+                }
+                updated
             } else msg
         }
         if (_currentConversationId.value == null) {
@@ -644,16 +799,28 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         if (shouldShowMessage) {
             // Decrypt message if encrypted
             viewModelScope.launch {
+                val isMediaMessage = event.message.mediaId != null
+                val baseText = when {
+                    isMediaMessage && isFromMe -> "[Bạn đã gửi một ảnh]"
+                    isMediaMessage -> "[Đã nhận một ảnh]"
+                    else -> event.message.content
+                } ?: ""
+
                 val displayText = if (event.message.isEncrypted && event.message.iv != null && conversationId.isNotEmpty()) {
                     val decrypted = repository.decryptMessage(event.message.content, event.message.iv, conversationId)
                     decrypted ?: "[Không thể giải mã]"
                 } else {
-                    event.message.content
+                    baseText
                 }
                 
                 // Resolve sender name from friends map
                 val friends = friendsMap.value
                 val senderDisplayName = friends[event.message.from] ?: event.message.from
+                val mediaStatus = when {
+                    event.message.mediaId == null -> MediaStatus.NONE
+                    isFromMe -> MediaStatus.READY
+                    else -> MediaStatus.DOWNLOADING
+                }
                 val message = Message(
                     id = ack.messageId.ifEmpty { "temp_${System.currentTimeMillis()}" },
                     text = displayText,
@@ -663,7 +830,11 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     senderId = event.message.from,
                     receiverId = _currentContactId.value ?: me,
                     conversationId = conversationId,
-                    clientMessageId = ack.clientMessageId
+                    clientMessageId = ack.clientMessageId,
+                    mediaId = event.message.mediaId,
+                    mediaMimeType = event.message.mediaMimeType,
+                    mediaSize = event.message.mediaSize,
+                    mediaStatus = mediaStatus
                 )
 
                 // Update conversation ID if we don't have it yet
@@ -686,6 +857,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 // Mark as read if in current conversation
                 if (conversationId.isNotEmpty()) {
                     markRead(conversationId = conversationId)
+                }
+
+                if (event.message.mediaId != null && conversationId.isNotEmpty()) {
+                    downloadMediaForMessage(message.id, event.message.mediaId, conversationId)
                 }
             }
         }
@@ -976,6 +1151,52 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 decryptedConversations.add(conversationId)
             }
         }
+    }
+
+    private fun updateMessageByClientMessageId(clientMessageId: String, transform: (Message) -> Message) {
+        _messages.value = _messages.value.map { msg ->
+            if (msg.clientMessageId == clientMessageId) transform(msg) else msg
+        }
+    }
+
+    private fun scheduleMediaDownloads(messages: List<Message>) {
+        messages.forEach { message ->
+            if (message.mediaId != null &&
+                message.mediaStatus == MediaStatus.DOWNLOADING &&
+                !message.conversationId.isNullOrBlank()
+            ) {
+                downloadMediaForMessage(message.id, message.mediaId, message.conversationId!!)
+            }
+        }
+    }
+
+    private fun downloadMediaForMessage(messageId: String, mediaId: String, conversationId: String) {
+        if (downloadingMediaIds.contains(mediaId)) return
+        downloadingMediaIds.add(mediaId)
+        updateMessageById(messageId) { it.copy(mediaStatus = MediaStatus.DOWNLOADING) }
+
+        viewModelScope.launch {
+            repository.downloadMedia(mediaId, conversationId).fold(
+                onSuccess = { result ->
+                    downloadingMediaIds.remove(mediaId)
+                    updateMessageById(messageId) { msg ->
+                        msg.copy(
+                            mediaLocalPath = result.localPath,
+                            mediaStatus = MediaStatus.READY
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    downloadingMediaIds.remove(mediaId)
+                    updateMessageById(messageId) { msg -> msg.copy(mediaStatus = MediaStatus.FAILED) }
+                    _messagesError.value = error.message
+                }
+            )
+        }
+    }
+
+    private fun updateMessageById(messageId: String, transform: (Message) -> Message) {
+        _messages.value = _messages.value.map { msg -> if (msg.id == messageId) transform(msg) else msg }
     }
     
     override fun onCleared() {

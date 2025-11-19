@@ -8,6 +8,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.example.chatapp.ui.chat.ChatScreen
 import com.example.chatapp.ui.chat.ContactInfoScreen
+import com.example.chatapp.ui.chat.MediaGalleryScreen
+import com.example.chatapp.ui.chat.MediaViewerScreen
 import com.example.chatapp.ui.home.FriendRequestScreen
 import com.example.chatapp.ui.home.FriendsListScreen
 import com.example.chatapp.ui.home.HomeScreen
@@ -84,6 +86,15 @@ fun AppNavGraph(
                     navController.navigate(
                         NavRoutes.ContactInfo.createRoute(safeName, contactId, conversationId)
                     )
+                },
+                onMediaClick = { _, mediaId, convoId, mimeType ->
+                    navController.navigate(
+                        NavRoutes.MediaViewer.createRoute(
+                            convoId,
+                            mediaId,
+                            mimeType
+                        )
+                    )
                 }
             )
         }
@@ -115,6 +126,50 @@ fun AppNavGraph(
                     }
                 },
                 navController = navController
+            )
+        }
+        composable(
+            route = NavRoutes.MediaGallery.route,
+            arguments = listOf(
+                navArgument("conversationId") {},
+                navArgument("contactName") { defaultValue = "" }
+            )
+        ) { backStackEntry ->
+            val conversationId = backStackEntry.arguments?.getString("conversationId") ?: return@composable
+            val contactName = backStackEntry.arguments?.getString("contactName").orEmpty()
+            MediaGalleryScreen(
+                conversationId = conversationId,
+                contactName = contactName,
+                chatViewModel = chatViewModel,
+                onBack = { navController.popBackStack() },
+                onMediaClick = { item ->
+                    navController.navigate(
+                        NavRoutes.MediaViewer.createRoute(
+                            conversationId,
+                            item.mediaId,
+                            item.mimeType
+                        )
+                    )
+                }
+            )
+        }
+        composable(
+            route = NavRoutes.MediaViewer.route,
+            arguments = listOf(
+                navArgument("conversationId") {},
+                navArgument("mediaId") {},
+                navArgument("mimeType") { defaultValue = "" }
+            )
+        ) { backStackEntry ->
+            val conversationId = backStackEntry.arguments?.getString("conversationId") ?: return@composable
+            val mediaId = backStackEntry.arguments?.getString("mediaId") ?: return@composable
+            val mimeType = backStackEntry.arguments?.getString("mimeType").orEmpty().ifBlank { null }
+            MediaViewerScreen(
+                conversationId = conversationId,
+                mediaId = mediaId,
+                mimeType = mimeType,
+                chatViewModel = chatViewModel,
+                onBack = { navController.popBackStack() }
             )
         }
         composable(NavRoutes.OtherUserProfile.route) { backStackEntry ->

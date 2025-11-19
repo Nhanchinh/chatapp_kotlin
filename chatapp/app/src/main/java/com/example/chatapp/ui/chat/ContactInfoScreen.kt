@@ -141,6 +141,16 @@ fun ContactInfoScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .clickable(enabled = conversationId != null) {
+                            if (conversationId != null) {
+                                navController?.navigate(
+                                    NavRoutes.MediaGallery.createRoute(
+                                        conversationId,
+                                        contactName
+                                    )
+                                )
+                            }
+                        }
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {

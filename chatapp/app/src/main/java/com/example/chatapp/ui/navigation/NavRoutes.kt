@@ -21,6 +21,22 @@ sealed class NavRoutes(val route: String) {
             return "contactinfo/$encodedName/$encodedId?conversationId=$encodedConversationId"
         }
     }
+    data object MediaGallery : NavRoutes("media-gallery/{conversationId}?contactName={contactName}") {
+        fun createRoute(conversationId: String, contactName: String): String {
+            val encodedConversationId = Uri.encode(conversationId)
+            val encodedName = Uri.encode(contactName)
+            return "media-gallery/$encodedConversationId?contactName=$encodedName"
+        }
+    }
+    data object MediaViewer :
+        NavRoutes("media-viewer/{conversationId}/{mediaId}?mimeType={mimeType}") {
+        fun createRoute(conversationId: String, mediaId: String, mimeType: String?): String {
+            val encodedConversationId = Uri.encode(conversationId)
+            val encodedMediaId = Uri.encode(mediaId)
+            val encodedMime = Uri.encode(mimeType ?: "")
+            return "media-viewer/$encodedConversationId/$encodedMediaId?mimeType=$encodedMime"
+        }
+    }
     data object OtherUserProfile : NavRoutes("otherprofile/{userId}")
     data object FriendRequest : NavRoutes("friendrequest")
     data object FriendsList : NavRoutes("friendslist")

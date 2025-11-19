@@ -263,6 +263,47 @@ class E2EEManager(context: Context) {
     }
     
     /**
+     * Encrypt raw bytes (media) with AES-GCM
+     */
+    suspend fun encryptBytes(
+        data: ByteArray,
+        conversationId: String,
+        token: String
+    ): AESEncryptedData? = withContext(Dispatchers.IO) {
+        try {
+            val sessionKey = getSessionKey(conversationId, token) ?: run {
+                Log.e(TAG, "No session key available for conversation $conversationId")
+                return@withContext null
+            }
+            CryptoManager.aesEncryptBytes(data, sessionKey)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error encrypting bytes for conversation $conversationId", e)
+            null
+        }
+    }
+
+    /**
+     * Decrypt raw bytes (media) with AES-GCM
+     */
+    suspend fun decryptBytes(
+        ciphertextBase64: String,
+        iv: String,
+        conversationId: String,
+        token: String
+    ): ByteArray? = withContext(Dispatchers.IO) {
+        try {
+            val sessionKey = getSessionKey(conversationId, token) ?: run {
+                Log.e(TAG, "No session key available for conversation $conversationId")
+                return@withContext null
+            }
+            CryptoManager.aesDecryptToBytes(ciphertextBase64, iv, sessionKey)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error decrypting bytes for conversation $conversationId", e)
+            null
+        }
+    }
+    
+    /**
      * Check if encryption is available for a conversation
      * Thread-safe operation
      */

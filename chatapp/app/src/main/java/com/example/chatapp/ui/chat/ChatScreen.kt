@@ -1,6 +1,8 @@
 package com.example.chatapp.ui.chat
 
+import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,20 +11,24 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -41,25 +47,28 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.focus.onFocusEvent
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
+import com.example.chatapp.data.model.MediaStatus
 import com.example.chatapp.data.model.Message
 import com.example.chatapp.ui.common.KeyboardDismissWrapper
+import com.example.chatapp.utils.rememberImagePickerLauncher
 import com.example.chatapp.viewmodel.ChatViewModel
+import java.io.File
 import kotlinx.coroutines.delay
-import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -70,7 +79,8 @@ fun ChatScreen(
     contactName: String?,
     conversationId: String?,
     onBack: () -> Unit,
-    onInfoClick: () -> Unit = {}
+    onInfoClick: () -> Unit = {},
+    onMediaClick: (messageId: String, mediaId: String, conversationId: String, mimeType: String?) -> Unit = { _, _, _, _ -> }
 ) {
     val messages by chatViewModel.messages.collectAsStateWithLifecycle()
     val isLoading by chatViewModel.messagesLoading.collectAsStateWithLifecycle()
@@ -81,6 +91,9 @@ fun ChatScreen(
     var hasSentTyping by remember { mutableStateOf(false) }
     var isTextFieldFocused by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val imagePickerLauncher = rememberImagePickerLauncher { uri ->
+        uri?.let { chatViewModel.sendImage(it) }
+    }
 
     LaunchedEffect(contactId, conversationId) {
         chatViewModel.openConversation(conversationId, contactId, contactName)
@@ -158,7 +171,17 @@ fun ChatScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(messages) { message ->
-                        MessageBubble(message = message)
+                        MessageBubble(
+                            message = message,
+                            onRetryMedia = { chatViewModel.retryDownloadMedia(it.id) },
+                            onMediaClick = {
+                                val mediaId = it.mediaId
+                                val convoId = it.conversationId
+                                if (mediaId != null && !convoId.isNullOrBlank()) {
+                                    onMediaClick(it.id, mediaId, convoId, it.mediaMimeType)
+                                }
+                            }
+                        )
                     }
                     item {
                         if (typingUsers.isNotEmpty()) {
@@ -204,6 +227,7 @@ fun ChatScreen(
                     onLike = {
                         chatViewModel.sendMessage("👍")
                     },
+                    onAttach = { imagePickerLauncher.launch("image/*") },
                     onFocusChange = { focused ->
                         isTextFieldFocused = focused
                     },
@@ -277,7 +301,12 @@ private fun AvatarCircle(initial: Char) {
 }
 
 @Composable
-private fun MessageBubble(message: Message, modifier: Modifier = Modifier) {
+private fun MessageBubble(
+    message: Message,
+    modifier: Modifier = Modifier,
+    onRetryMedia: (Message) -> Unit,
+    onMediaClick: ((Message) -> Unit)? = null
+) {
     val isFromMe = message.isFromMe
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -289,20 +318,33 @@ private fun MessageBubble(message: Message, modifier: Modifier = Modifier) {
         }
 
         Column(horizontalAlignment = if (isFromMe) Alignment.End else Alignment.Start) {
-            Box(
-                modifier = Modifier
-                    .widthIn(max = 280.dp)
-                    .background(
-                        color = if (isFromMe) Color(0xFF2196F3) else Color(0xFFE5E5EA),
-                        shape = RoundedCornerShape(16.dp)
-                    )
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
-            ) {
-                Text(
-                    text = message.text,
-                    color = if (isFromMe) Color.White else Color.Black,
-                    style = MaterialTheme.typography.bodyMedium
+            if (message.mediaId != null) {
+                MediaPreview(
+                    message = message,
+                    isFromMe = isFromMe,
+                    onRetry = { onRetryMedia(message) },
+                    onClick = { onMediaClick?.invoke(message) }
                 )
+                Spacer(modifier = Modifier.height(4.dp))
+            }
+
+            val shouldShowText = message.mediaId == null && message.text.isNotBlank()
+            if (shouldShowText) {
+                Box(
+                    modifier = Modifier
+                        .widthIn(max = 280.dp)
+                        .background(
+                            color = if (isFromMe) Color(0xFF2196F3) else Color(0xFFE5E5EA),
+                            shape = RoundedCornerShape(16.dp)
+                        )
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        text = message.text,
+                        color = if (isFromMe) Color.White else Color.Black,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
             }
             if (isFromMe) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -338,6 +380,7 @@ private fun ChatInputBar(
     onTextChange: (String) -> Unit,
     onSend: () -> Unit,
     onLike: () -> Unit,
+    onAttach: () -> Unit,
     modifier: Modifier = Modifier,
     onFocusChange: (Boolean) -> Unit = {}
 ) {
@@ -348,6 +391,14 @@ private fun ChatInputBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        IconButton(onClick = onAttach) {
+            Icon(
+                imageVector = Icons.Default.Image,
+                contentDescription = "Gửi ảnh",
+                tint = Color(0xFF2196F3)
+            )
+        }
+
         OutlinedTextField(
             value = text,
             onValueChange = onTextChange,
@@ -385,6 +436,97 @@ private fun ChatInputBar(
                 tint = if (text.isBlank()) Color(0xFF2196F3) else Color(0xFF2196F3)
             )
         }
+    }
+}
+
+@Composable
+private fun MediaPreview(
+    message: Message,
+    isFromMe: Boolean,
+    onRetry: () -> Unit,
+    onClick: () -> Unit
+) {
+    val shape = RoundedCornerShape(16.dp)
+    val backgroundColor = if (isFromMe) Color(0xFF1976D2) else Color(0xFFE0E0E0)
+    val contentModifier = Modifier
+        .widthIn(max = 280.dp)
+        .clip(shape)
+
+    when (message.mediaStatus) {
+        MediaStatus.READY -> {
+            val uri = message.mediaLocalPath?.let { resolveMediaUri(it) }
+            if (uri != null) {
+                AsyncImage(
+                    model = uri,
+                    contentDescription = "Hình ảnh",
+                    modifier = contentModifier.clickable { onClick() },
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                Box(
+                    modifier = contentModifier
+                        .background(backgroundColor)
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(text = "Không tìm thấy ảnh", color = Color.White)
+                }
+            }
+        }
+        MediaStatus.UPLOADING -> {
+            Box(
+                modifier = contentModifier
+                    .background(backgroundColor)
+                    .padding(16.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(text = "Đang gửi ảnh...", color = Color.White, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+        MediaStatus.DOWNLOADING -> {
+            Box(
+                modifier = contentModifier
+                    .background(backgroundColor)
+                    .padding(16.dp)
+                    .clickable { onRetry() },
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(text = "Đang tải ảnh...", color = Color.White, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+        MediaStatus.FAILED -> {
+            Box(
+                modifier = contentModifier
+                    .background(backgroundColor)
+                    .padding(16.dp)
+                    .clickable { onRetry() },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Tải ảnh thất bại\nNhấn để thử lại",
+                    color = Color.White,
+                    style = MaterialTheme.typography.bodySmall,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+        else -> {}
+    }
+}
+
+private fun resolveMediaUri(path: String): Uri {
+    return if (path.startsWith("content://") || path.startsWith("file://")) {
+        Uri.parse(path)
+    } else {
+        Uri.fromFile(File(path))
     }
 }
 

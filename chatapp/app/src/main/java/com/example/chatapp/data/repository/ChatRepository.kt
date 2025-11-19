@@ -1,15 +1,23 @@
 package com.example.chatapp.data.repository
 
 import android.content.Context
+import android.net.Uri
 import android.util.Log
+import android.webkit.MimeTypeMap
 import com.example.chatapp.data.encryption.E2EEManager
 import com.example.chatapp.data.local.AuthManager
+import com.example.chatapp.data.model.MediaItem
 import com.example.chatapp.data.remote.ApiClient
 import com.example.chatapp.data.remote.WebSocketClient
 import com.example.chatapp.data.remote.WebSocketEvent
 import com.example.chatapp.data.remote.model.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.FileOutputStream
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 class ChatRepository(private val context: Context) {
     private val TAG = "ChatRepository"
@@ -17,6 +25,18 @@ class ChatRepository(private val context: Context) {
     private val authManager = AuthManager(context)
     private val webSocketClient = WebSocketClient()
     private val e2eeManager = E2EEManager(context)
+    private val mediaCache = mutableMapOf<String, String>()
+    private val mediaCacheDir: File by lazy {
+        val dir = File(context.cacheDir, "chat_media_cache")
+        if (!dir.exists()) {
+            dir.mkdirs()
+        }
+        dir
+    }
+
+    companion object {
+        private const val MAX_MEDIA_SIZE_BYTES = 5 * 1024 * 1024 // 5MB
+    }
 
     suspend fun getConversations(limit: Int = 20, cursor: String? = null): Result<ConversationsResponse> {
         return try {
@@ -108,6 +128,164 @@ class ChatRepository(private val context: Context) {
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    suspend fun sendMediaMessage(
+        to: String,
+        conversationId: String,
+        clientMessageId: String,
+        mediaUri: Uri
+    ): Result<MediaSendResult> {
+        return try {
+            val userId = authManager.userId.first()
+                ?: return Result.failure(Exception("User ID not found"))
+            val token = authManager.getValidAccessToken()
+                ?: return Result.failure(Exception("Not authenticated"))
+
+            val bytes = readBytesFromUri(mediaUri)
+            if (bytes.isEmpty()) {
+                return Result.failure(Exception("Không đọc được dữ liệu hình ảnh"))
+            }
+            if (bytes.size > MAX_MEDIA_SIZE_BYTES) {
+                return Result.failure(Exception("Ảnh vượt quá giới hạn 5MB"))
+            }
+
+            val mimeType = context.contentResolver.getType(mediaUri) ?: "application/octet-stream"
+
+            val encrypted = e2eeManager.encryptBytes(bytes, conversationId, token)
+                ?: return Result.failure(Exception("Không thể mã hóa ảnh"))
+
+            val uploadResponse = api.uploadMedia(
+                "Bearer $token",
+                MediaUploadRequest(
+                    conversationId = conversationId,
+                    mediaData = encrypted.ciphertext,
+                    iv = encrypted.iv,
+                    mimeType = mimeType,
+                    size = bytes.size
+                )
+            )
+
+            val mediaId = uploadResponse.mediaId
+            val localPath = saveBytesToCache(mediaId, bytes, mimeType)
+
+            val sendResult = webSocketClient.sendMessage(
+                from = userId,
+                to = to,
+                content = "[Media]",
+                clientMessageId = clientMessageId,
+                isEncrypted = false,
+                mediaId = mediaId,
+                mediaMimeType = mimeType,
+                mediaSize = bytes.size.toLong()
+            )
+
+            if (sendResult.isFailure) {
+                return Result.failure(sendResult.exceptionOrNull() ?: Exception("Không thể gửi thông điệp media"))
+            }
+
+            Result.success(
+                MediaSendResult(
+                    mediaId = mediaId,
+                    localPath = localPath,
+                    mimeType = mimeType,
+                    size = bytes.size.toLong()
+                )
+            )
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun downloadMedia(
+        mediaId: String,
+        conversationId: String
+    ): Result<MediaDownloadResult> {
+        return try {
+            mediaCache[mediaId]?.let { cachedPath ->
+                if (File(cachedPath).exists()) {
+                    return Result.success(MediaDownloadResult(mediaId, cachedPath, null))
+                } else {
+                    mediaCache.remove(mediaId)
+                }
+            }
+
+            val token = authManager.getValidAccessToken()
+                ?: return Result.failure(Exception("Not authenticated"))
+
+            val response = api.downloadMedia("Bearer $token", mediaId)
+
+            val decrypted = e2eeManager.decryptBytes(response.mediaData, response.iv, conversationId, token)
+                ?: return Result.failure(Exception("Không thể giải mã media"))
+
+            val localPath = saveBytesToCache(response.mediaId, decrypted, response.mimeType)
+            Result.success(MediaDownloadResult(response.mediaId, localPath, response.mimeType))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getMediaGallery(
+        conversationId: String,
+        limit: Int = 200
+    ): Result<List<MediaItem>> {
+        return try {
+            val me = authManager.userId.first()
+            val token = authManager.getValidAccessToken()
+                ?: return Result.failure(Exception("Not authenticated"))
+
+            val response = api.getMessages("Bearer $token", conversationId, limit, null)
+            val items = response.items
+                .filter { it.mediaId != null }
+                .map { dto ->
+                    val mediaId = dto.mediaId!!
+                    val localPath = ensureMediaCached(mediaId, conversationId).getOrNull()
+                    MediaItem(
+                        messageId = dto.id,
+                        mediaId = mediaId,
+                        conversationId = conversationId,
+                        mimeType = dto.mediaMimeType,
+                        size = dto.mediaSize,
+                        timestamp = parseTimestamp(dto.timestamp),
+                        localPath = localPath,
+                        isFromMe = dto.senderId == me
+                    )
+                }
+            Result.success(items)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun ensureMediaCached(mediaId: String, conversationId: String): Result<String> {
+        mediaCache[mediaId]?.let { cached ->
+            if (File(cached).exists()) {
+                return Result.success(cached)
+            } else {
+                mediaCache.remove(mediaId)
+            }
+        }
+
+        return downloadMedia(mediaId, conversationId).map { it.localPath }
+    }
+
+    private fun parseTimestamp(value: String): Long {
+        return try {
+            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()).parse(value)?.time
+                ?: System.currentTimeMillis()
+        } catch (_: Exception) {
+            System.currentTimeMillis()
+        }
+    }
+
+    fun getCachedMediaPath(mediaId: String): String? {
+        mediaCache[mediaId]?.let { path ->
+            if (File(path).exists()) return path
+            mediaCache.remove(mediaId)
+        }
+
+        val existing = mediaCacheDir.listFiles()?.firstOrNull { it.name.startsWith(mediaId) }
+        return existing?.absolutePath?.also { mediaCache[mediaId] = it }
     }
 
     suspend fun sendTyping(to: String, isTyping: Boolean): Result<Unit> {
@@ -287,5 +465,48 @@ class ChatRepository(private val context: Context) {
             Result.failure(e)
         }
     }
+    private fun readBytesFromUri(uri: Uri): ByteArray {
+        return try {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                val buffer = ByteArrayOutputStream()
+                val data = ByteArray(8 * 1024)
+                while (true) {
+                    val read = input.read(data)
+                    if (read == -1) break
+                    buffer.write(data, 0, read)
+                }
+                buffer.toByteArray()
+            } ?: ByteArray(0)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reading bytes from uri $uri", e)
+            ByteArray(0)
+        }
+    }
+
+    private fun saveBytesToCache(mediaId: String, data: ByteArray, mimeType: String): String {
+        val extension = MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType) ?: "bin"
+        val file = File(mediaCacheDir, "$mediaId.$extension")
+        return try {
+            FileOutputStream(file).use { it.write(data) }
+            mediaCache[mediaId] = file.absolutePath
+            file.absolutePath
+        } catch (e: Exception) {
+            Log.e(TAG, "Error saving media to cache", e)
+            file.absolutePath
+        }
+    }
 }
+
+data class MediaSendResult(
+    val mediaId: String,
+    val localPath: String,
+    val mimeType: String,
+    val size: Long
+)
+
+data class MediaDownloadResult(
+    val mediaId: String,
+    val localPath: String,
+    val mimeType: String?
+)
 

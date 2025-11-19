@@ -11,6 +11,19 @@ data class Message(
     val conversationId: String? = null,
     val delivered: Boolean = false,
     val seen: Boolean = false,
-    val clientMessageId: String? = null
+    val clientMessageId: String? = null,
+    val mediaId: String? = null,
+    val mediaMimeType: String? = null,
+    val mediaSize: Long? = null,
+    val mediaLocalPath: String? = null,
+    val mediaStatus: MediaStatus = MediaStatus.NONE
 )
+
+enum class MediaStatus {
+    NONE,
+    UPLOADING,
+    DOWNLOADING,
+    READY,
+    FAILED
+}
 
