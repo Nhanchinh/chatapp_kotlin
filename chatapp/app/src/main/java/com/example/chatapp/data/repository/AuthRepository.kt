@@ -1,6 +1,7 @@
 package com.example.chatapp.data.repository
 
 import android.content.Context
+import android.util.Log
 import com.example.chatapp.data.encryption.CryptoManager
 import com.example.chatapp.data.encryption.KeyManager
 import com.example.chatapp.data.local.AuthManager
@@ -57,28 +58,51 @@ class AuthRepository(context: Context) {
                     birthYear = user.birthYear
                 )
                 
-                // If user doesn't have RSA keypair yet (e.g., registered before E2EE), generate one
-                if (!keyManager.hasRSAKeyPair()) {
-                    try {
-                        val publicKey = keyManager.generateAndStoreRSAKeyPair()
-                        val publicKeyBase64 = CryptoManager.encodePublicKey(publicKey)
-                        // Upload public key to server
-                        val token = authManager.getValidAccessToken()
-                        if (token != null) {
-                            api.updateProfile(
-                                "Bearer $token",
-                                ProfileUpdateRequest(publicKey = publicKeyBase64)
-                            )
-                        }
-                    } catch (e: Exception) {
-                        // Log but don't fail login if key generation fails
-                        android.util.Log.e("AuthRepository", "Failed to generate RSA keypair", e)
-                    }
-                }
+                ensurePublicKeySynced(response.requiresPublicKey == true)
             }
             Result.success(response)
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    /**
+     * Ensure client has RSA keypair and server stores matching public key.
+     * If requiresPublicKey is true, upload current public key even if keypair exists.
+     */
+    private suspend fun ensurePublicKeySynced(serverRequiresPublicKey: Boolean) {
+        var needsUpload = false
+        var publicKeyBase64: String? = null
+
+        try {
+            if (!keyManager.hasRSAKeyPair()) {
+                val publicKey = keyManager.generateAndStoreRSAKeyPair()
+                publicKeyBase64 = CryptoManager.encodePublicKey(publicKey)
+                needsUpload = true
+            }
+
+            if (serverRequiresPublicKey) {
+                if (publicKeyBase64 == null) {
+                    publicKeyBase64 = keyManager.getRSAPublicKeyBase64()
+                }
+                if (publicKeyBase64 == null) {
+                    val regeneratedKey = keyManager.generateAndStoreRSAKeyPair()
+                    publicKeyBase64 = CryptoManager.encodePublicKey(regeneratedKey)
+                }
+                needsUpload = true
+            }
+
+            if (needsUpload && publicKeyBase64 != null) {
+                val token = authManager.getValidAccessToken()
+                if (token != null) {
+                    api.updateProfile(
+                        "Bearer $token",
+                        ProfileUpdateRequest(publicKey = publicKeyBase64)
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("AuthRepository", "Failed to sync public key", e)
         }
     }
 

@@ -307,18 +307,15 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         _currentConversationId.value = existingConversation.id
                         loadMessages(existingConversation.id)
                     } else {
-                        // No existing conversation found - this is a new conversation
-                        // Messages will be empty until first message is sent
-                        // Backend will auto-create conversation when first message is sent via WebSocket
-                        _messages.value = emptyList()
-                        _currentConversationId.value = null
+                        // No existing conversation found - create new conversation with encryption
+                        createNewConversation(contactId)
                     }
                 },
                 onFailure = { error ->
                     _conversationsLoading.value = false
                     // Even if refresh fails, still allow user to start new conversation
-                    _messages.value = emptyList()
-                    _currentConversationId.value = null
+                    // Try to create new conversation
+                    createNewConversation(contactId)
                 }
             )
         }
@@ -330,6 +327,41 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         _currentContactName.value = null
         _messages.value = emptyList()
         _typingUsers.value = emptySet()
+    }
+    
+    /**
+     * Create a new conversation with encryption keys.
+     * This follows the new flow:
+     * 1. Prepare encrypted keys
+     * 2. Call createConversation API (server creates conversation + stores keys)
+     * 3. Store session key locally
+     * 4. Ready to send messages
+     */
+    private fun createNewConversation(contactId: String) {
+        viewModelScope.launch {
+            _conversationsLoading.value = true
+            _messagesLoading.value = true
+            
+            repository.createConversation(contactId).fold(
+                onSuccess = { conversationId ->
+                    android.util.Log.d("ChatViewModel", "Successfully created conversation: $conversationId")
+                    _currentConversationId.value = conversationId
+                    _messages.value = emptyList()
+                    _conversationsLoading.value = false
+                    _messagesLoading.value = false
+                    // Conversation is ready, user can now send messages
+                },
+                onFailure = { error ->
+                    android.util.Log.e("ChatViewModel", "Failed to create conversation", error)
+                    _conversationsLoading.value = false
+                    _messagesLoading.value = false
+                    _messagesError.value = "Failed to create conversation: ${error.message}"
+                    // Still allow user to try sending message (fallback to old flow)
+                    _currentConversationId.value = null
+                    _messages.value = emptyList()
+                }
+            )
+        }
     }
 
     private fun loadMessages(conversationId: String, limit: Int = 50, cursor: String? = null) {
@@ -423,26 +455,28 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val me = currentUserId.value ?: return@launch
             
-            // **CRITICAL**: Setup encryption BEFORE sending message to avoid race condition
-            if (conversationId != null && !repository.isEncryptionAvailable(conversationId)) {
-                try {
-                    android.util.Log.d("ChatViewModel", "Setting up E2EE before sending message for conversation: $conversationId")
-                    val participants = listOf(me, to)
-                    repository.setupConversationEncryption(conversationId, participants).fold(
-                        onSuccess = { success ->
-                            if (success) {
-                                android.util.Log.d("ChatViewModel", "E2EE setup successful before sending")
-                            }
-                        },
-                        onFailure = { error ->
-                            android.util.Log.e("ChatViewModel", "E2EE setup failed: ${error.message}")
-                        }
-                    )
-                    // Small delay to ensure keys are stored
-                    kotlinx.coroutines.delay(200)
-                } catch (e: Exception) {
-                    android.util.Log.e("ChatViewModel", "Error setting up encryption before send", e)
-                }
+            // If no conversation ID, create one first (new flow)
+            if (conversationId == null) {
+                android.util.Log.d("ChatViewModel", "No conversation ID, creating new conversation...")
+                repository.createConversation(to).fold(
+                    onSuccess = { newConversationId ->
+                        conversationId = newConversationId
+                        _currentConversationId.value = newConversationId
+                        android.util.Log.d("ChatViewModel", "Created conversation: $newConversationId")
+                    },
+                    onFailure = { error ->
+                        android.util.Log.e("ChatViewModel", "Failed to create conversation: ${error.message}")
+                        _messagesError.value = "Failed to create conversation: ${error.message}"
+                        return@launch
+                    }
+                )
+            }
+            
+            // At this point, conversationId should be set and encryption keys should be ready
+            // (they were created during createConversation)
+            if (conversationId == null) {
+                android.util.Log.e("ChatViewModel", "Conversation ID is still null, cannot send message")
+                return@launch
             }
             
             val clientMessageId = UUID.randomUUID().toString()

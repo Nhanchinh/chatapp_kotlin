@@ -35,7 +35,8 @@ data class LoginResponse(
     @Json(name = "expires_in") val expiresIn: Long? = null,
     @Json(name = "refresh_token") val refreshToken: String? = null,
     @Json(name = "refresh_expires_in") val refreshExpiresIn: Long? = null,
-    val user: UserDto? = null
+    val user: UserDto? = null,
+    @Json(name = "requires_public_key") val requiresPublicKey: Boolean? = null
 )
 
 data class ProfileUpdateRequest(

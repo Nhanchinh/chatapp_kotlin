@@ -22,6 +22,8 @@ import com.example.chatapp.data.remote.model.PublicKeysResponse
 import com.example.chatapp.data.remote.model.StoreKeysRequest
 import com.example.chatapp.data.remote.model.StoreKeysResponse
 import com.example.chatapp.data.remote.model.GetKeyResponse
+import com.example.chatapp.data.remote.model.CreateConversationRequest
+import com.example.chatapp.data.remote.model.CreateConversationResponse
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.Field
@@ -108,6 +110,12 @@ interface ApiService {
     ): FriendActionResponse
 
     // Chat API
+    @POST("conversations")
+    suspend fun createConversation(
+        @Header("Authorization") token: String,
+        @Body body: CreateConversationRequest
+    ): CreateConversationResponse
+
     @GET("conversations")
     suspend fun getConversations(
         @Header("Authorization") token: String,

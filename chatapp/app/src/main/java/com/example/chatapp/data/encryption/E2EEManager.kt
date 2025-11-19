@@ -28,6 +28,69 @@ class E2EEManager(context: Context) {
     private val setupInProgress = mutableSetOf<String>()
     
     /**
+     * Prepare encrypted keys for a new conversation (before conversation is created).
+     * This method generates AES session key and encrypts it for all participants.
+     * 
+     * @param participantIds List of participant user IDs (including self)
+     * @param token Authentication token
+     * @return Pair of (encrypted keys list, session key) or null if failed
+     */
+    suspend fun prepareEncryptedKeys(
+        participantIds: List<String>,
+        token: String
+    ): Pair<List<EncryptedSessionKeyDto>, SecretKey>? = withContext(Dispatchers.IO) {
+        try {
+            // Generate new AES session key
+            val sessionKey = CryptoManager.generateAESKey()
+            
+            // Fetch public keys for all participants
+            val userIdsParam = participantIds.joinToString(",")
+            val publicKeysResponse = api.getPublicKeys("Bearer $token", userIdsParam)
+            
+            if (publicKeysResponse.items.isEmpty()) {
+                Log.e(TAG, "No public keys found for participants")
+                return@withContext null
+            }
+            
+            // Encrypt session key for each participant
+            val encryptedKeys = mutableListOf<EncryptedSessionKeyDto>()
+            
+            for (keyDto in publicKeysResponse.items) {
+                val publicKeyBase64 = keyDto.publicKey
+                if (publicKeyBase64 == null) {
+                    Log.w(TAG, "No public key for user ${keyDto.userId}")
+                    continue
+                }
+                
+                try {
+                    val publicKey = CryptoManager.decodePublicKey(publicKeyBase64)
+                    val sessionKeyBytes = sessionKey.encoded
+                    val encryptedKey = CryptoManager.rsaEncrypt(sessionKeyBytes, publicKey)
+                    
+                    encryptedKeys.add(
+                        EncryptedSessionKeyDto(
+                            userId = keyDto.userId,
+                            encryptedSessionKey = encryptedKey
+                        )
+                    )
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error encrypting key for user ${keyDto.userId}", e)
+                }
+            }
+            
+            if (encryptedKeys.isEmpty()) {
+                Log.e(TAG, "Failed to encrypt keys for any participant")
+                return@withContext null
+            }
+            
+            return@withContext Pair(encryptedKeys, sessionKey)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error preparing encrypted keys", e)
+            null
+        }
+    }
+    
+    /**
      * Setup encryption for a conversation
      * - First tries to fetch existing key from server (peer may have already created it)
      * - If not found, generates a new AES session key
@@ -75,48 +138,13 @@ class E2EEManager(context: Context) {
             
             Log.d(TAG, "No existing key found, generating new key for conversation $conversationId")
             
-            // Generate new AES session key
-            val sessionKey = CryptoManager.generateAESKey()
-            
-            // Fetch public keys for all participants
-            val userIdsParam = participantIds.joinToString(",")
-            val publicKeysResponse = api.getPublicKeys("Bearer $token", userIdsParam)
-            
-            if (publicKeysResponse.items.isEmpty()) {
-                Log.e(TAG, "No public keys found for participants")
+            // Use prepareEncryptedKeys to generate and encrypt keys
+            val prepared = prepareEncryptedKeys(participantIds, token)
+            if (prepared == null) {
                 return@withContext false
             }
             
-            // Encrypt session key for each participant
-            val encryptedKeys = mutableListOf<EncryptedSessionKeyDto>()
-            
-            for (keyDto in publicKeysResponse.items) {
-                val publicKeyBase64 = keyDto.publicKey
-                if (publicKeyBase64 == null) {
-                    Log.w(TAG, "No public key for user ${keyDto.userId}")
-                    continue
-                }
-                
-                try {
-                    val publicKey = CryptoManager.decodePublicKey(publicKeyBase64)
-                    val sessionKeyBytes = sessionKey.encoded
-                    val encryptedKey = CryptoManager.rsaEncrypt(sessionKeyBytes, publicKey)
-                    
-                    encryptedKeys.add(
-                        EncryptedSessionKeyDto(
-                            userId = keyDto.userId,
-                            encryptedSessionKey = encryptedKey
-                        )
-                    )
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error encrypting key for user ${keyDto.userId}", e)
-                }
-            }
-            
-            if (encryptedKeys.isEmpty()) {
-                Log.e(TAG, "Failed to encrypt keys for any participant")
-                return@withContext false
-            }
+            val (encryptedKeys, sessionKey) = prepared
             
             // Upload encrypted keys to server
             val storeRequest = StoreKeysRequest(
@@ -240,6 +268,13 @@ class E2EEManager(context: Context) {
      */
     suspend fun isEncryptionAvailable(conversationId: String): Boolean {
         return keyManager.hasSessionKey(conversationId)
+    }
+    
+    /**
+     * Store session key for a conversation (used when creating conversation with keys)
+     */
+    suspend fun storeSessionKeyForConversation(conversationId: String, sessionKey: SecretKey) {
+        keyManager.storeSessionKey(conversationId, sessionKey)
     }
 }
 

@@ -82,3 +82,19 @@ data class WebSocketMessageResponse(
     @Json(name = "is_encrypted") val isEncrypted: Boolean = false
 )
 
+// Create Conversation Models
+data class EncryptedKeyDto(
+    @Json(name = "user_id") val userId: String,
+    @Json(name = "encrypted_session_key") val encryptedSessionKey: String
+)
+
+data class CreateConversationRequest(
+    @Json(name = "participant_id") val participantId: String,
+    val keys: List<EncryptedKeyDto>
+)
+
+data class CreateConversationResponse(
+    @Json(name = "conversation_id") val conversationId: String,
+    val participants: List<String>
+)
+

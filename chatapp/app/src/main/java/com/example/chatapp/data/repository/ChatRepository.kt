@@ -230,5 +230,62 @@ class ChatRepository(private val context: Context) {
     suspend fun isEncryptionAvailable(conversationId: String): Boolean {
         return e2eeManager.isEncryptionAvailable(conversationId)
     }
+    
+    /**
+     * Create a new conversation with encryption keys.
+     * This follows the new flow:
+     * 1. Prepare encrypted keys for all participants
+     * 2. Call createConversation API (server creates conversation + stores keys)
+     * 3. Store session key locally
+     * 4. Return conversation ID
+     * 
+     * @param participantId The other participant's user ID
+     * @return Result with conversation ID or error
+     */
+    suspend fun createConversation(participantId: String): Result<String> {
+        return try {
+            val me = authManager.userId.first()
+                ?: return Result.failure(Exception("User ID not found"))
+            val token = authManager.getValidAccessToken()
+                ?: return Result.failure(Exception("Not authenticated"))
+            
+            val participantIds = listOf(me, participantId)
+            
+            // Prepare encrypted keys
+            val prepared = e2eeManager.prepareEncryptedKeys(participantIds, token)
+                ?: return Result.failure(Exception("Failed to prepare encrypted keys"))
+            
+            val (encryptedKeys, sessionKey) = prepared
+            
+            // Convert to DTO format for API
+            val keyDtos = encryptedKeys.map { key ->
+                com.example.chatapp.data.remote.model.EncryptedKeyDto(
+                    userId = key.userId,
+                    encryptedSessionKey = key.encryptedSessionKey
+                )
+            }
+            
+            // Create conversation with keys
+            val request = com.example.chatapp.data.remote.model.CreateConversationRequest(
+                participantId = participantId,
+                keys = keyDtos
+            )
+            
+            val response = api.createConversation("Bearer $token", request)
+            
+            // Store session key locally using E2EEManager's internal method
+            // We need to store it through the manager to ensure proper handling
+            // Since keyManager is private, we'll use a workaround: store via setup method
+            // Actually, we can create a helper method or just store it directly
+            // For now, let's add a method to E2EEManager to store session key
+            e2eeManager.storeSessionKeyForConversation(response.conversationId, sessionKey)
+            
+            Log.d(TAG, "Successfully created conversation ${response.conversationId} with encryption")
+            Result.success(response.conversationId)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error creating conversation", e)
+            Result.failure(e)
+        }
+    }
 }
 
