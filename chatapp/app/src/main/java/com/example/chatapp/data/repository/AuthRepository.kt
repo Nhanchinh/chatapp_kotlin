@@ -10,6 +10,12 @@ import com.example.chatapp.data.remote.model.LoginResponse
 import com.example.chatapp.data.remote.model.ProfileUpdateRequest
 import com.example.chatapp.data.remote.model.RegisterRequest
 import com.example.chatapp.data.remote.model.UserDto
+import com.example.chatapp.data.remote.model.OtpRequest
+import com.example.chatapp.data.remote.model.VerifyOtpRequest
+import com.example.chatapp.data.remote.model.ResetPasswordRequest
+import com.example.chatapp.data.remote.model.ChangePasswordRequest
+import org.json.JSONObject
+import retrofit2.HttpException
 
 class AuthRepository(context: Context) {
     private val api = ApiClient.apiService
@@ -145,6 +151,89 @@ class AuthRepository(context: Context) {
             Result.success(token)
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    suspend fun requestPasswordOtp(email: String): Result<String> {
+        return try {
+            val response = api.requestPasswordOtp(OtpRequest(email))
+            Result.success(response.message ?: "Vui lòng kiểm tra hộp thư của bạn")
+        } catch (e: Exception) {
+            Result.failure(mapError(e))
+        }
+    }
+
+    suspend fun verifyPasswordOtp(email: String, otp: String): Result<String> {
+        return try {
+            val response = api.verifyPasswordOtp(VerifyOtpRequest(email, otp))
+            if (response.success == true && !response.resetToken.isNullOrBlank()) {
+                Result.success(response.resetToken)
+            } else {
+                Result.failure(Exception(response.message ?: "Xác minh OTP thất bại"))
+            }
+        } catch (e: Exception) {
+            Result.failure(mapError(e))
+        }
+    }
+
+    suspend fun resetPassword(email: String, newPassword: String, token: String): Result<Unit> {
+        return try {
+            val response = api.resetPassword(
+                ResetPasswordRequest(email = email, newPassword = newPassword, token = token)
+            )
+            if (response.success == false) {
+                Result.failure(Exception(response.message ?: "Không thể đặt lại mật khẩu"))
+            } else {
+                Result.success(Unit)
+            }
+        } catch (e: Exception) {
+            Result.failure(mapError(e))
+        }
+    }
+
+    suspend fun changePassword(oldPassword: String, newPassword: String): Result<Unit> {
+        return try {
+            val token = authManager.getValidAccessToken()
+                ?:
+                return Result.failure(Exception("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại."))
+            val response = api.changePassword(
+                "Bearer $token",
+                ChangePasswordRequest(oldPassword = oldPassword, newPassword = newPassword)
+            )
+            if (response.success == false) {
+                Result.failure(Exception(response.message ?: "Không thể đổi mật khẩu"))
+            } else {
+                Result.success(Unit)
+            }
+        } catch (e: Exception) {
+            Result.failure(mapError(e))
+        }
+    }
+
+    private fun mapError(throwable: Throwable): Exception {
+        if (throwable is HttpException) {
+            val message = try {
+                val errorBody = throwable.response()?.errorBody()?.string()
+                extractErrorMessage(errorBody).ifEmpty { throwable.message() ?: "Đã xảy ra lỗi" }
+            } catch (e: Exception) {
+                throwable.message() ?: "Đã xảy ra lỗi"
+            }
+            return Exception(message)
+        }
+        return Exception(throwable.message ?: "Đã xảy ra lỗi")
+    }
+
+    private fun extractErrorMessage(raw: String?): String {
+        if (raw.isNullOrBlank()) return ""
+        return try {
+            val json = JSONObject(raw)
+            when {
+                json.has("message") -> json.getString("message")
+                json.has("detail") -> json.getString("detail")
+                else -> ""
+            }
+        } catch (e: Exception) {
+            ""
         }
     }
 }

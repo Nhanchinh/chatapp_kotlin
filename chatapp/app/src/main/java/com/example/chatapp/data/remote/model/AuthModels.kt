@@ -133,4 +133,36 @@ data class GetKeyResponse(
     @Json(name = "encrypted_session_key") val encryptedSessionKey: String
 )
 
+// ===== Password & OTP =====
 
+data class OtpRequest(
+    val email: String
+)
+
+data class SimpleMessageResponse(
+    val message: String? = null,
+    val success: Boolean? = null
+)
+
+data class VerifyOtpRequest(
+    val email: String,
+    val otp: String
+)
+
+data class VerifyOtpResponse(
+    val success: Boolean?,
+    val message: String?,
+    @Json(name = "reset_token") val resetToken: String?,
+    @Json(name = "expires_in") val expiresIn: Int?
+)
+
+data class ResetPasswordRequest(
+    val email: String,
+    @Json(name = "new_password") val newPassword: String,
+    val token: String
+)
+
+data class ChangePasswordRequest(
+    @Json(name = "old_password") val oldPassword: String,
+    @Json(name = "new_password") val newPassword: String
+)

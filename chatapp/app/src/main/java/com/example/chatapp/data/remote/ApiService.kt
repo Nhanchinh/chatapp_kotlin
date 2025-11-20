@@ -5,6 +5,12 @@ import com.example.chatapp.data.remote.model.ProfileUpdateRequest
 import com.example.chatapp.data.remote.model.RegisterRequest
 import com.example.chatapp.data.remote.model.RegisterResponse
 import com.example.chatapp.data.remote.model.UserDto
+import com.example.chatapp.data.remote.model.OtpRequest
+import com.example.chatapp.data.remote.model.SimpleMessageResponse
+import com.example.chatapp.data.remote.model.VerifyOtpRequest
+import com.example.chatapp.data.remote.model.VerifyOtpResponse
+import com.example.chatapp.data.remote.model.ResetPasswordRequest
+import com.example.chatapp.data.remote.model.ChangePasswordRequest
 import com.example.chatapp.data.remote.model.SearchUsersResponse
 import com.example.chatapp.data.remote.model.FriendActionResponse
 import com.example.chatapp.data.remote.model.FriendsListResponse
@@ -169,6 +175,28 @@ interface ApiService {
     suspend fun setOffline(
         @Header("Authorization") token: String
     ): FriendActionResponse
+
+    // Password & OTP
+    @POST("auth/request-otp")
+    suspend fun requestPasswordOtp(
+        @Body body: OtpRequest
+    ): SimpleMessageResponse
+
+    @POST("auth/verify-otp")
+    suspend fun verifyPasswordOtp(
+        @Body body: VerifyOtpRequest
+    ): VerifyOtpResponse
+
+    @POST("auth/reset-password")
+    suspend fun resetPassword(
+        @Body body: ResetPasswordRequest
+    ): SimpleMessageResponse
+
+    @POST("auth/change-password")
+    suspend fun changePassword(
+        @Header("Authorization") token: String,
+        @Body body: ChangePasswordRequest
+    ): SimpleMessageResponse
 
     // Media API
     @POST("media")

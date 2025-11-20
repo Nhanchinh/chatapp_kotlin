@@ -200,5 +200,12 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             Result.failure(e)
         }
     }
+
+    suspend fun changePassword(
+        oldPassword: String,
+        newPassword: String
+    ): Result<Unit> {
+        return repository.changePassword(oldPassword, newPassword)
+    }
 }
 

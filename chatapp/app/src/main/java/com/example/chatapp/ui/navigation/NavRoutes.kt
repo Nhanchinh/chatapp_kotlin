@@ -4,6 +4,7 @@ import android.net.Uri
 
 sealed class NavRoutes(val route: String) {
     data object Login : NavRoutes("login")
+    data object ForgotPassword : NavRoutes("forgot-password")
     data object Home : NavRoutes("home")
     data object Chat : NavRoutes("chat/{contactId}?contactName={contactName}&conversationId={conversationId}") {
         fun createRoute(contactId: String, contactName: String?, conversationId: String?): String {

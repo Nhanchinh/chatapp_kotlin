@@ -28,7 +28,8 @@ import com.example.chatapp.ui.common.KeyboardDismissWrapper
 @Composable
 fun LoginScreen(
     onLoginSuccess: () -> Unit,
-    authViewModel: AuthViewModel
+    authViewModel: AuthViewModel,
+    onForgotPassword: () -> Unit = {}
 ) {
     val loginViewModel = remember { LoginViewModel(authViewModel) }
     val state by loginViewModel.uiState.collectAsState()
@@ -79,7 +80,17 @@ fun LoginScreen(
             Text(text = state.errorMessage ?: "", color = MaterialTheme.colorScheme.error)
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        if (!state.isRegisterMode) {
+            Spacer(modifier = Modifier.height(8.dp))
+            TextButton(
+                onClick = onForgotPassword,
+                enabled = !state.isLoading
+            ) {
+                Text("Quên mật khẩu?")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
 
         Button(
             onClick = {

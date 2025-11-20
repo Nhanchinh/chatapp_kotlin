@@ -15,16 +15,33 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import kotlinx.coroutines.launch
+import com.example.chatapp.viewmodel.AuthViewModel
+import com.example.chatapp.ui.common.KeyboardDismissWrapper
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    authViewModel: AuthViewModel
 ) {
     var notificationsEnabled by remember { mutableStateOf(true) }
     var soundEnabled by remember { mutableStateOf(true) }
     var vibrationEnabled by remember { mutableStateOf(true) }
     var readReceiptEnabled by remember { mutableStateOf(true) }
+    var oldPassword by remember { mutableStateOf("") }
+    var newPassword by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
+    var changeError by remember { mutableStateOf<String?>(null) }
+    var changeMessage by remember { mutableStateOf<String?>(null) }
+    var changeLoading by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     
     Scaffold(
         topBar = {
@@ -38,13 +55,17 @@ fun SettingsScreen(
             )
         }
     ) { paddingValues ->
-        Column(
+        KeyboardDismissWrapper(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .verticalScroll(rememberScrollState())
-                .background(Color.White)
         ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .background(Color.White)
+            ) {
             Spacer(modifier = Modifier.height(8.dp))
             
             // Thông báo section
@@ -231,31 +252,126 @@ fun SettingsScreen(
             Divider()
             
             // Bảo mật
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .clip(MaterialTheme.shapes.medium)
+                    .background(Color(0xFFF5F5F5))
+                    .padding(16.dp)
             ) {
-                Icon(
-                    Icons.Default.Lock,
-                    contentDescription = null,
-                    tint = Color(0xFF2196F3),
-                    modifier = Modifier.size(24.dp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.Lock,
+                        contentDescription = null,
+                        tint = Color(0xFF2196F3)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Bảo mật",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = oldPassword,
+                    onValueChange = {
+                        oldPassword = it
+                        changeError = null
+                        changeMessage = null
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Mật khẩu hiện tại") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    enabled = !changeLoading
                 )
-                Spacer(modifier = Modifier.width(16.dp))
-                Text(
-                    text = "Bảo mật",
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.weight(1f)
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = newPassword,
+                    onValueChange = {
+                        newPassword = it
+                        changeError = null
+                        changeMessage = null
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Mật khẩu mới") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    enabled = !changeLoading
                 )
-                Icon(
-                    Icons.Default.ChevronRight,
-                    contentDescription = null,
-                    tint = Color.Gray
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = confirmPassword,
+                    onValueChange = {
+                        confirmPassword = it
+                        changeError = null
+                        changeMessage = null
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Xác nhận mật khẩu mới") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    enabled = !changeLoading
                 )
+                if (!changeError.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = changeError ?: "",
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+                if (!changeMessage.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = changeMessage ?: "",
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(
+                    onClick = {
+                        if (newPassword != confirmPassword) {
+                            changeError = "Mật khẩu xác nhận không khớp"
+                            return@Button
+                        }
+                        if (newPassword.length < 6) {
+                            changeError = "Mật khẩu mới phải có ít nhất 6 ký tự"
+                            return@Button
+                        }
+                        scope.launch {
+                            changeLoading = true
+                            changeError = null
+                            changeMessage = null
+                            val result = authViewModel.changePassword(oldPassword, newPassword)
+                            changeLoading = false
+                            if (result.isSuccess) {
+                                changeMessage = "Đổi mật khẩu thành công"
+                                oldPassword = ""
+                                newPassword = ""
+                                confirmPassword = ""
+                            } else {
+                                changeError =
+                                    result.exceptionOrNull()?.message ?: "Không thể đổi mật khẩu"
+                            }
+                        }
+                    },
+                    enabled = !changeLoading,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    if (changeLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier
+                                .size(18.dp)
+                                .padding(end = 8.dp),
+                            strokeWidth = 2.dp
+                        )
+                    }
+                    Text("Đổi mật khẩu")
+                }
             }
-            
+
             Divider()
             
             // Chặn người dùng
@@ -349,7 +465,8 @@ fun SettingsScreen(
                 )
             }
             
-            Spacer(modifier = Modifier.height(72.dp))
+                Spacer(modifier = Modifier.height(72.dp))
+            }
         }
     }
 }

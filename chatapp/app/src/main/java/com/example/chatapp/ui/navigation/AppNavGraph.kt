@@ -14,6 +14,7 @@ import com.example.chatapp.ui.home.FriendRequestScreen
 import com.example.chatapp.ui.home.FriendsListScreen
 import com.example.chatapp.ui.home.HomeScreen
 import com.example.chatapp.ui.login.LoginScreen
+import com.example.chatapp.ui.login.ForgotPasswordScreen
 import com.example.chatapp.ui.profile.UserProfileScreen
 import com.example.chatapp.ui.qrcode.MyQRCodeScreen
 import com.example.chatapp.ui.qrcode.QRCodeScannerScreen
@@ -41,7 +42,16 @@ fun AppNavGraph(
                         launchSingleTop = true
                     }
                 },
-                authViewModel = authViewModel
+                authViewModel = authViewModel,
+                onForgotPassword = {
+                    navController.navigate(NavRoutes.ForgotPassword.route)
+                }
+            )
+        }
+        composable(NavRoutes.ForgotPassword.route) {
+            ForgotPasswordScreen(
+                onBack = { navController.popBackStack() },
+                onFinished = { navController.popBackStack() }
             )
         }
         composable(NavRoutes.Home.route) {
@@ -206,6 +216,7 @@ fun AppNavGraph(
         }
         composable(NavRoutes.Settings.route) {
             SettingsScreen(
+                authViewModel = authViewModel,
                 onBack = { navController.popBackStack() }
             )
         }
