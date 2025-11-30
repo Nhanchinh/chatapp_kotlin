@@ -27,6 +27,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.ThumbUp
@@ -53,9 +54,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.focus.onFocusEvent
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -90,18 +96,66 @@ fun ChatScreen(
     var messageText by rememberSaveable { mutableStateOf("") }
     var hasSentTyping by remember { mutableStateOf(false) }
     var isTextFieldFocused by remember { mutableStateOf(false) }
+    var lastMessageCount by remember { mutableStateOf(0) }
+    var isInitialLoad by remember { mutableStateOf(true) }
+    var isRefreshing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val imagePickerLauncher = rememberImagePickerLauncher { uri ->
         uri?.let { chatViewModel.sendImage(it) }
     }
+    
+    // Nested scroll connection to detect pull-to-refresh
+    val nestedScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                // Check if we're at the top and pulling down (available.y > 0 means pulling down)
+                val isAtTop = listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
+                if (isAtTop && available.y > 0 && !isRefreshing && !isLoading) {
+                    // User is pulling down from top - trigger refresh
+                    isRefreshing = true
+                    scope.launch {
+                        // Refresh messages by reopening conversation
+                        chatViewModel.openConversation(conversationId, contactId, contactName)
+                    }
+                }
+                return Offset.Zero
+            }
+        }
+    }
+    
+    // End refresh when loading completes
+    LaunchedEffect(isLoading) {
+        if (isRefreshing && !isLoading) {
+            delay(300) // Small delay to ensure UI updates
+            isRefreshing = false
+        }
+    }
 
     LaunchedEffect(contactId, conversationId) {
         chatViewModel.openConversation(conversationId, contactId, contactName)
+        lastMessageCount = 0
+        isInitialLoad = true
     }
 
+    // Only scroll to bottom when new messages are added (not on initial load or app restart)
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.lastIndex)
+            val currentCount = messages.size
+            // Only auto-scroll if new messages were added (not on initial load)
+            if (!isInitialLoad && currentCount > lastMessageCount) {
+                delay(100) // Small delay to ensure list is rendered
+                if (messages.isNotEmpty()) {
+                    listState.animateScrollToItem(messages.lastIndex)
+                }
+            }
+            // Mark initial load as complete after first render
+            if (isInitialLoad) {
+                isInitialLoad = false
+            }
+            lastMessageCount = currentCount
+        } else {
+            lastMessageCount = 0
+            isInitialLoad = true
         }
     }
 
@@ -157,19 +211,74 @@ fun ChatScreen(
                     )
                 }
 
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                    contentPadding = PaddingValues(
-                        start = 16.dp,
-                        top = 12.dp,
-                        end = 16.dp,
-                        bottom = 12.dp
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+                Box(modifier = Modifier.weight(1f)) {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .nestedScroll(nestedScrollConnection),
+                        contentPadding = PaddingValues(
+                            start = 16.dp,
+                            top = 12.dp,
+                            end = 16.dp,
+                            bottom = 12.dp
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Pull to refresh indicator
+                        if (isRefreshing) {
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 16.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator(
+                                        color = Color(0xFF667EEA),
+                                        modifier = Modifier.size(32.dp)
+                                    )
+                                }
+                            }
+                        }
+                    // Empty state - only show when no messages and not loading
+                    if (!isLoading && messages.isEmpty() && errorMessage == null) {
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 48.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier.padding(32.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Chat,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(80.dp),
+                                        tint = Color(0xFFBDBDBD)
+                                    )
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Text(
+                                        text = "Chưa có tin nhắn nào",
+                                        style = MaterialTheme.typography.titleLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF424242)
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = "Bắt đầu cuộc trò chuyện với ${chatViewModel.currentContactName.collectAsStateWithLifecycle().value ?: contactName ?: contactId}!",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = Color(0xFF757575),
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    
                     items(messages) { message ->
                         MessageBubble(
                             message = message,
@@ -189,6 +298,7 @@ fun ChatScreen(
                         }
                     }
                 }
+            }
 
                 // Input bar with IME padding to stay above keyboard
                 // This ensures the input bar moves up when keyboard opens
@@ -216,12 +326,7 @@ fun ChatScreen(
                                 hasSentTyping = false
                                 chatViewModel.sendTyping(false)
                             }
-                            // Scroll to bottom after sending
-                            scope.launch {
-                                if (messages.isNotEmpty()) {
-                                    listState.animateScrollToItem(messages.lastIndex)
-                                }
-                            }
+                            // Scroll to bottom after sending - will be handled by LaunchedEffect
                         }
                     },
                     onLike = {

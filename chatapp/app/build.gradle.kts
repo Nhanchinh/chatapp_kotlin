@@ -17,7 +17,7 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Base URL: backend on LAN IP (physical device on same network)
-        buildConfigField("String", "BASE_URL", "\"http://192.168.30.102:8000/\"")
+        buildConfigField("String", "BASE_URL", "\"http://192.168.30.105:8000/\"")
     }
 
     buildTypes {

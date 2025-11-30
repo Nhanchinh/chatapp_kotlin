@@ -175,28 +175,6 @@ fun ContactInfoScreen(
                 }
                 
                 Divider()
-                
-                // Create group chat
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.Group,
-                        contentDescription = null,
-                        tint = Color(0xFF2196F3),
-                        modifier = Modifier.size(40.dp)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(
-                        text = "Tạo nhóm chat với $contactName",
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                }
-                
-                Divider()
             }
             
             // Search in conversation
@@ -216,30 +194,6 @@ fun ContactInfoScreen(
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
                         text = "Tìm kiếm trong cuộc trò chuyện",
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                }
-                
-                Divider()
-            }
-            
-            // Notifications
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.Notifications,
-                        contentDescription = null,
-                        tint = Color(0xFF2196F3),
-                        modifier = Modifier.size(40.dp)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(
-                        text = "Tắt thông báo",
                         style = MaterialTheme.typography.bodyLarge
                     )
                 }

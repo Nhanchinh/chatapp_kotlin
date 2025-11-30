@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -17,7 +18,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.example.chatapp.ui.navigation.NavRoutes
@@ -39,193 +42,128 @@ fun MenuScreen(navController: NavController? = null, authViewModel: AuthViewMode
             pendingRequests = resp.requests.size
         } catch (_: Exception) { pendingRequests = 0 }
     }
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Menu") },
-                actions = {
-                    IconButton(onClick = { /* More options */ }) {
-                        Icon(Icons.Default.Apps, contentDescription = "More options")
-                    }
-                }
+    
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.White)
+    ) {
+        // Header with gradient
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xFF667EEA),
+                            Color(0xFF764BA2)
+                        )
+                    )
+                )
+                .padding(horizontal = 16.dp, vertical = 24.dp)
+        ) {
+            Text(
+                text = "Menu",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
             )
         }
-    ) { paddingValues ->
+        
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
                 .background(Color.White)
         ) {
-            // Profile section
-            Row(
+            // Profile section with card
+            Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable {
-                        val usernamePath = authState.userEmail ?: authState.userId ?: "me"
-                        navController?.navigate("profile/$usernamePath")
-                    }
                     .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
-                Box(
+                Row(
                     modifier = Modifier
-                        .size(56.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFF90CAF9)),
-                    contentAlignment = Alignment.Center
+                        .fillMaxWidth()
+                        .clickable {
+                            val usernamePath = authState.userEmail ?: authState.userId ?: "me"
+                            navController?.navigate("profile/$usernamePath")
+                        }
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = (authState.userFullName ?: authState.userEmail ?: "?")
-                            .split(" ")
-                            .take(2)
-                            .mapNotNull { it.firstOrNull()?.toString() }
-                            .joinToString("")
-                            .uppercase().ifEmpty { "?" },
-                        color = Color.White,
-                        style = MaterialTheme.typography.titleLarge
-                    )
-                }
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text(
-                        text = authState.userFullName ?: authState.userEmail ?: "Người dùng",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        text = "Chuyển trang cá nhân - @" + (authState.userEmail ?: authState.userId ?: "me"),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.Gray
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clip(CircleShape)
+                            .background(
+                                brush = androidx.compose.ui.graphics.Brush.radialGradient(
+                                    colors = listOf(
+                                        Color(0xFF667EEA),
+                                        Color(0xFF764BA2)
+                                    )
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = (authState.userFullName ?: authState.userEmail ?: "?")
+                                .split(" ")
+                                .take(2)
+                                .mapNotNull { it.firstOrNull()?.toString() }
+                                .joinToString("")
+                                .uppercase().ifEmpty { "?" },
+                            color = Color.White,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = authState.userFullName ?: authState.userEmail ?: "Người dùng",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = authState.userEmail ?: authState.userId ?: "me",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray
+                        )
+                    }
+                    Icon(
+                        Icons.Default.ChevronRight,
+                        contentDescription = null,
+                        tint = Color.Gray
                     )
                 }
             }
             
-            Divider()
-            
             // Menu items
-            Column {
-                // Cài đặt (Settings)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { navController?.navigate(NavRoutes.Settings.route) }
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.Settings,
-                        contentDescription = null,
-                        tint = Color(0xFF2196F3),
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Text(
-                        text = "Cài đặt",
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+            ) {
+                MenuItemCard(
+                    icon = Icons.Default.Settings,
+                    title = "Cài đặt",
+                    onClick = { navController?.navigate(NavRoutes.Settings.route) }
+                )
                 
-                Divider()
+                MenuItemCard(
+                    icon = Icons.Default.QrCodeScanner,
+                    title = "Quét mã QR",
+                    onClick = { navController?.navigate(NavRoutes.QRCodeScanner.route) }
+                )
                 
-                // Lời mời kết bạn (Friend Requests)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { navController?.navigate(NavRoutes.FriendRequest.route) }
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.PersonAdd,
-                        contentDescription = null,
-                        tint = Color(0xFF2196F3),
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                        Text(
-                            text = "Lời mời kết bạn",
-                            style = MaterialTheme.typography.bodyLarge,
-                            modifier = Modifier.weight(1f)
-                        )
-                        if (pendingRequests > 0) {
-                            Badge(containerColor = Color.Red) {
-                                Text(pendingRequests.toString(), color = Color.White)
-                            }
-                        }
-                    }
-                }
-                
-                Divider()
-                
-                // Danh sách bạn bè (Friends List)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { navController?.navigate(NavRoutes.FriendsList.route) }
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.Group,
-                        contentDescription = null,
-                        tint = Color(0xFF2196F3),
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Text(
-                        text = "Danh sách bạn bè",
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                }
-                
-                Divider()
-                
-                // Quét mã QR (QR Scanner)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { navController?.navigate(NavRoutes.QRCodeScanner.route) }
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.QrCodeScanner,
-                        contentDescription = null,
-                        tint = Color(0xFF2196F3),
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Text(
-                        text = "Quét mã QR",
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                }
-                
-                Divider()
-                
-                // Mã QR của tôi (My QR Code)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { navController?.navigate(NavRoutes.MyQRCode.route) }
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.QrCode,
-                        contentDescription = null,
-                        tint = Color(0xFF2196F3),
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Text(
-                        text = "Mã QR của tôi",
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                }
-                
-                Divider()
+                MenuItemCard(
+                    icon = Icons.Default.QrCode,
+                    title = "Mã QR của tôi",
+                    onClick = { navController?.navigate(NavRoutes.MyQRCode.route) }
+                )
             }
             
             Spacer(modifier = Modifier.weight(1f))
@@ -235,10 +173,79 @@ fun MenuScreen(navController: NavController? = null, authViewModel: AuthViewMode
                 onClick = onLogout,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp)
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .height(56.dp),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF667EEA)
+                )
             ) {
-                Text("Đăng xuất")
+                Text(
+                    "Đăng xuất",
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
             }
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun MenuItemCard(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    onClick: () -> Unit,
+    badge: Int? = null
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        onClick = onClick
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+                    .background(Color(0xFF667EEA).copy(alpha = 0.1f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = Color(0xFF667EEA),
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.weight(1f)
+            )
+            if (badge != null && badge > 0) {
+                Badge(
+                    containerColor = Color(0xFFFF6B6B)
+                ) {
+                    Text(badge.toString(), color = Color.White)
+                }
+            }
+            Icon(
+                Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = Color.Gray,
+                modifier = Modifier.size(20.dp)
+            )
         }
     }
 }
