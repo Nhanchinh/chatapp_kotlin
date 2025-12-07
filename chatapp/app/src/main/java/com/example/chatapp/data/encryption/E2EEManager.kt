@@ -42,15 +42,19 @@ class E2EEManager(context: Context) {
         try {
             // Generate new AES session key
             val sessionKey = CryptoManager.generateAESKey()
+            Log.d(TAG, "Generated new AES session key")
             
             // Fetch public keys for all participants
             val userIdsParam = participantIds.joinToString(",")
+            Log.d(TAG, "Fetching public keys for participants: $userIdsParam")
             val publicKeysResponse = api.getPublicKeys("Bearer $token", userIdsParam)
             
             if (publicKeysResponse.items.isEmpty()) {
                 Log.e(TAG, "No public keys found for participants")
                 return@withContext null
             }
+            
+            Log.d(TAG, "Fetched ${publicKeysResponse.items.size} public keys from server")
             
             // Encrypt session key for each participant
             val encryptedKeys = mutableListOf<EncryptedSessionKeyDto>()
@@ -63,6 +67,7 @@ class E2EEManager(context: Context) {
                 }
                 
                 try {
+                    Log.d(TAG, "Encrypting session key for user ${keyDto.userId} with their public key (length: ${publicKeyBase64.length})")
                     val publicKey = CryptoManager.decodePublicKey(publicKeyBase64)
                     val sessionKeyBytes = sessionKey.encoded
                     val encryptedKey = CryptoManager.rsaEncrypt(sessionKeyBytes, publicKey)
@@ -73,8 +78,9 @@ class E2EEManager(context: Context) {
                             encryptedSessionKey = encryptedKey
                         )
                     )
+                    Log.d(TAG, "✅ Successfully encrypted session key for user ${keyDto.userId} (encrypted length: ${encryptedKey.length})")
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error encrypting key for user ${keyDto.userId}", e)
+                    Log.e(TAG, "❌ Error encrypting key for user ${keyDto.userId}", e)
                 }
             }
             
@@ -83,6 +89,7 @@ class E2EEManager(context: Context) {
                 return@withContext null
             }
             
+            Log.d(TAG, "Successfully encrypted session keys for ${encryptedKeys.size} participants")
             return@withContext Pair(encryptedKeys, sessionKey)
         } catch (e: Exception) {
             Log.e(TAG, "Error preparing encrypted keys", e)
@@ -124,19 +131,38 @@ class E2EEManager(context: Context) {
         }
         
         try {
-            // **CRITICAL**: Check if key already exists on server (peer may have created it)
-            val existingKey = try {
-                getSessionKey(conversationId, token, retryCount = 0) // Don't retry here
+            // **CRITICAL**: Check if key already exists on server by checking HTTP status code
+            // This prevents generating duplicate keys when peer has already created them
+            val keyExistsOnServer = try {
+                api.getMyConversationKey("Bearer $token", conversationId)
+                true  // Key exists (200 OK)
+            } catch (e: retrofit2.HttpException) {
+                e.code() != 404  // If not 404, key might exist but there's an error
             } catch (e: Exception) {
-                null
+                false  // Other errors, assume key doesn't exist
             }
             
-            if (existingKey != null) {
-                Log.d(TAG, "Key already exists for conversation $conversationId (fetched from server)")
-                return@withContext true
+            if (keyExistsOnServer) {
+                // Key exists on server, try to fetch and decrypt it
+                val decryptedKey = try {
+                    getSessionKey(conversationId, token, retryCount = 0)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Key exists on server but failed to decrypt for conversation $conversationId", e)
+                    null
+                }
+                
+                if (decryptedKey != null) {
+                    Log.d(TAG, "Key already exists for conversation $conversationId (fetched and decrypted from server)")
+                    return@withContext true
+                } else {
+                    // Key exists but cannot decrypt (likely key rotation or corruption)
+                    // Don't overwrite, just return false
+                    Log.w(TAG, "Key exists on server but cannot decrypt for conversation $conversationId - not overwriting")
+                    return@withContext false
+                }
             }
             
-            Log.d(TAG, "No existing key found, generating new key for conversation $conversationId")
+            Log.d(TAG, "No existing key found on server, generating new key for conversation $conversationId")
             
             // Use prepareEncryptedKeys to generate and encrypt keys
             val prepared = prepareEncryptedKeys(participantIds, token)
@@ -184,14 +210,41 @@ class E2EEManager(context: Context) {
     ): SecretKey? = withContext(Dispatchers.IO) {
         try {
             // Check if we already have the key locally
-            keyManager.getSessionKey(conversationId)?.let { return@withContext it }
+            keyManager.getSessionKey(conversationId)?.let {
+                Log.d(TAG, "✅ Session key found in local cache for conversation $conversationId")
+                return@withContext it
+            }
+            
+            Log.d(TAG, "Fetching encrypted session key from server for conversation $conversationId (attempt ${retryCount + 1})")
+            
+            // Verify RSA key pair before attempting decryption
+            if (retryCount == 0) {
+                Log.d(TAG, "Verifying RSA key pair integrity...")
+                val keyPairValid = keyManager.verifyRSAKeyPairMatch()
+                if (!keyPairValid) {
+                    Log.e(TAG, "❌ CRITICAL ERROR: RSA key pair mismatch detected!")
+                    Log.e(TAG, "The cached public key does NOT match the private key in keystore")
+                    Log.e(TAG, "This means encrypted keys on server were encrypted with a DIFFERENT public key")
+                    return@withContext null
+                }
+            }
             
             // Fetch encrypted key from server
             val keyResponse = api.getMyConversationKey("Bearer $token", conversationId)
+            Log.d(TAG, "✅ Encrypted key fetched from server (HTTP 200), encrypted key length: ${keyResponse.encryptedSessionKey.length}")
             
             // Store encrypted key and decrypt it
             keyManager.storeEncryptedSessionKey(conversationId, keyResponse.encryptedSessionKey)
-            return@withContext keyManager.getAndDecryptSessionKey(conversationId)
+            Log.d(TAG, "Encrypted key stored, attempting to decrypt...")
+            
+            val decryptedKey = keyManager.getAndDecryptSessionKey(conversationId)
+            if (decryptedKey == null) {
+                Log.e(TAG, "❌ CRITICAL: Failed to decrypt session key even though it was fetched from server!")
+                Log.e(TAG, "This indicates a KEY MISMATCH: the encrypted key was encrypted with a different public key")
+                Log.e(TAG, "The encrypted key on server is OUTDATED (encrypted with old public key)")
+                Log.e(TAG, "Solution: Delete this conversation and create a new one, OR ask the other user to send a new message")
+            }
+            return@withContext decryptedKey
         } catch (e: retrofit2.HttpException) {
             // If 404 and haven't retried much, wait and retry (key might be being created)
             if (e.code() == 404 && retryCount < 2) {
@@ -236,6 +289,7 @@ class E2EEManager(context: Context) {
     
     /**
      * Decrypt a message with AES-GCM
+     * If decryption fails, automatically fetch key from server and retry
      * 
      * @param ciphertext The encrypted message (Base64)
      * @param iv The initialization vector (Base64)
@@ -250,12 +304,62 @@ class E2EEManager(context: Context) {
         token: String
     ): String? = withContext(Dispatchers.IO) {
         try {
-            val sessionKey = getSessionKey(conversationId, token) ?: run {
-                Log.e(TAG, "No session key available for conversation $conversationId")
+            // Try to get session key (from cache or local storage)
+            var sessionKey = getSessionKey(conversationId, token, retryCount = 0)
+            
+            // If no key, try to fetch from server
+            if (sessionKey == null) {
+                Log.d(TAG, "No local session key, fetching from server for conversation $conversationId")
+                try {
+                    val keyResponse = api.getMyConversationKey("Bearer $token", conversationId)
+                    // Store encrypted key and decrypt it
+                    keyManager.storeEncryptedSessionKey(conversationId, keyResponse.encryptedSessionKey)
+                    sessionKey = keyManager.getAndDecryptSessionKey(conversationId)
+                } catch (e: retrofit2.HttpException) {
+                    if (e.code() == 404) {
+                        Log.w(TAG, "Key not found on server for conversation $conversationId")
+                    } else {
+                        Log.e(TAG, "HTTP ${e.code()} getting session key for conversation $conversationId", e)
+                    }
+                    return@withContext null
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error fetching session key from server for conversation $conversationId", e)
+                    return@withContext null
+                }
+            }
+            
+            if (sessionKey == null) {
+                Log.e(TAG, "No session key available for conversation $conversationId after fetch")
                 return@withContext null
             }
             
-            CryptoManager.aesDecrypt(ciphertext, iv, sessionKey)
+            // Try to decrypt
+            val decrypted = try {
+                CryptoManager.aesDecrypt(ciphertext, iv, sessionKey)
+            } catch (e: Exception) {
+                Log.w(TAG, "Decryption failed, trying to refresh key from server for conversation $conversationId", e)
+                // Decryption failed - key might be wrong or corrupted
+                // Try to fetch fresh key from server and retry
+                try {
+                    val keyResponse = api.getMyConversationKey("Bearer $token", conversationId)
+                    // Clear old key and store new encrypted key
+                    keyManager.clearSessionKey(conversationId)
+                    keyManager.storeEncryptedSessionKey(conversationId, keyResponse.encryptedSessionKey)
+                    val freshSessionKey = keyManager.getAndDecryptSessionKey(conversationId)
+                    
+                    if (freshSessionKey != null) {
+                        // Retry decryption with fresh key
+                        CryptoManager.aesDecrypt(ciphertext, iv, freshSessionKey)
+                    } else {
+                        null
+                    }
+                } catch (e2: Exception) {
+                    Log.e(TAG, "Error refreshing key from server for conversation $conversationId", e2)
+                    null
+                }
+            }
+            
+            decrypted
         } catch (e: Exception) {
             Log.e(TAG, "Error decrypting message", e)
             null
@@ -323,6 +427,46 @@ class E2EEManager(context: Context) {
      */
     suspend fun clearSessionKeyForConversation(conversationId: String) {
         keyManager.clearSessionKey(conversationId)
+    }
+    
+    /**
+     * Delete outdated conversation key from server and local storage.
+     * This is used when the encrypted key on server cannot be decrypted
+     * (e.g., encrypted with old public key after key rotation).
+     * 
+     * @param conversationId The conversation ID
+     * @param token Authentication token
+     * @return true if successfully deleted, false otherwise
+     */
+    suspend fun deleteOutdatedConversationKey(
+        conversationId: String,
+        token: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        try {
+            Log.d(TAG, "Deleting outdated conversation key for $conversationId")
+            
+            // Delete from server
+            try {
+                api.deleteMyConversationKey("Bearer $token", conversationId)
+                Log.d(TAG, "✅ Deleted key from server")
+            } catch (e: retrofit2.HttpException) {
+                if (e.code() == 404) {
+                    Log.w(TAG, "Key not found on server (already deleted or never existed)")
+                } else {
+                    Log.e(TAG, "Failed to delete key from server: HTTP ${e.code()}", e)
+                    return@withContext false
+                }
+            }
+            
+            // Clear from local storage
+            keyManager.clearSessionKey(conversationId)
+            Log.d(TAG, "✅ Cleared key from local storage")
+            
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Error deleting outdated conversation key", e)
+            false
+        }
     }
 }
 

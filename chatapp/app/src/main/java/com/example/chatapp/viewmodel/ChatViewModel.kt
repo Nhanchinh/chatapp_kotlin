@@ -490,7 +490,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                             "Tin nhắn đã bị thu hồi"
                         } else if (dto.isEncrypted && dto.iv != null) {
                             hasEncryptedMessages = true
-                            val decrypted = repository.decryptMessage(dto.content, dto.iv, conversationId)
+                            var decrypted = repository.decryptMessage(dto.content, dto.iv, conversationId)
+                            
+                            // If decryption failed, mark for auto-setup (will retry after setup)
                             if (decrypted == null) {
                                 failedToDecrypt = true
                                 "[Không thể giải mã]"
@@ -537,11 +539,28 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     // Only attempt once per conversation to avoid infinite loop
                     if (hasEncryptedMessages && failedToDecrypt && !autoSetupAttempted.contains(conversationId)) {
                         android.util.Log.w("ChatViewModel", "Detected encrypted messages but missing key! Auto-setup encryption...")
+                        android.util.Log.w("ChatViewModel", "This may be due to outdated key (encrypted with old public key)")
                         autoSetupAttempted.add(conversationId) // Mark as attempted
                         
                         val contactId = _currentContactId.value
                         if (me != null && contactId != null) {
                             viewModelScope.launch {
+                                // First, try to delete outdated key (if any)
+                                android.util.Log.d("ChatViewModel", "Attempting to delete outdated conversation key...")
+                                repository.deleteOutdatedConversationKey(conversationId).fold(
+                                    onSuccess = { deleted ->
+                                        if (deleted) {
+                                            android.util.Log.d("ChatViewModel", "✅ Deleted outdated key, now will setup new encryption")
+                                        } else {
+                                            android.util.Log.w("ChatViewModel", "Could not delete outdated key (may not exist)")
+                                        }
+                                    },
+                                    onFailure = { error ->
+                                        android.util.Log.w("ChatViewModel", "Error deleting outdated key: ${error.message}")
+                                    }
+                                )
+                                
+                                // Now setup encryption (will fetch existing key or create new one)
                                 val participants = listOf(me, contactId)
                                 repository.setupConversationEncryption(conversationId, participants).fold(
                                     onSuccess = { success ->
@@ -552,6 +571,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                                             loadMessages(conversationId, limit, cursor)
                                         } else {
                                             android.util.Log.w("ChatViewModel", "Auto-setup returned false")
+                                            android.util.Log.w("ChatViewModel", "SOLUTION: Delete this conversation and create a new one")
                                         }
                                     },
                                     onFailure = { error ->
@@ -903,7 +923,25 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 } ?: ""
 
                 val displayText = if (event.message.isEncrypted && event.message.iv != null && conversationId.isNotEmpty()) {
-                    val decrypted = repository.decryptMessage(event.message.content, event.message.iv, conversationId)
+                    // Try to decrypt - if fails, try to fetch key from server and retry
+                    var decrypted = repository.decryptMessage(event.message.content, event.message.iv, conversationId)
+                    
+                    // If decryption failed, try to fetch key from server (peer may have created conversation)
+                    if (decrypted == null) {
+                        android.util.Log.d("ChatViewModel", "Decryption failed, trying to fetch key from server for conversation $conversationId")
+                        // Try to setup encryption (will fetch key from server if exists)
+                        val participants = listOf(me, event.message.from)
+                        repository.setupConversationEncryption(conversationId, participants).fold(
+                            onSuccess = {
+                                // Retry decryption after fetching key
+                                decrypted = repository.decryptMessage(event.message.content, event.message.iv, conversationId)
+                            },
+                            onFailure = { error ->
+                                android.util.Log.e("ChatViewModel", "Failed to setup encryption for conversation $conversationId", error)
+                            }
+                        )
+                    }
+                    
                     decrypted ?: "[Không thể giải mã]"
                 } else {
                     baseText

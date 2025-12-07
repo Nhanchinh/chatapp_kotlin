@@ -75,18 +75,62 @@ class AuthRepository(context: Context) {
     /**
      * Ensure client has RSA keypair and server stores matching public key.
      * If requiresPublicKey is true, upload current public key even if keypair exists.
+     * 
+     * **CRITICAL**: Verifies that local public key matches server public key.
+     * If mismatch detected, updates server with current local public key.
      */
     private suspend fun ensurePublicKeySynced(serverRequiresPublicKey: Boolean) {
         var needsUpload = false
         var publicKeyBase64: String? = null
 
         try {
+            // Step 1: Ensure we have a keypair locally
             if (!keyManager.hasRSAKeyPair()) {
+                Log.w("AuthRepository", "No RSA keypair found, generating new one...")
                 val publicKey = keyManager.generateAndStoreRSAKeyPair()
                 publicKeyBase64 = CryptoManager.encodePublicKey(publicKey)
                 needsUpload = true
+                Log.d("AuthRepository", "✅ Generated new RSA keypair")
             }
 
+            // Step 2: Verify local public key matches server public key
+            val token = authManager.getValidAccessToken()
+            if (token != null) {
+                try {
+                    // Fetch current user profile to get server's public key
+                    val userProfile = api.getProfile("Bearer $token")
+                    val serverPublicKey = userProfile.publicKey
+                    val localPublicKey = keyManager.getRSAPublicKeyBase64()
+                    
+                    if (serverPublicKey != null && localPublicKey != null) {
+                        if (serverPublicKey != localPublicKey) {
+                            Log.e("AuthRepository", "❌ PUBLIC KEY MISMATCH DETECTED!")
+                            Log.e("AuthRepository", "Server public key length: ${serverPublicKey.length}")
+                            Log.e("AuthRepository", "Local public key length: ${localPublicKey.length}")
+                            Log.e("AuthRepository", "This means encrypted keys on server are OUTDATED!")
+                            Log.w("AuthRepository", "Updating server with current local public key...")
+                            
+                            publicKeyBase64 = localPublicKey
+                            needsUpload = true
+                            
+                            // Clear all local session keys (they're encrypted with old keys on server)
+                            Log.w("AuthRepository", "Clearing all local session keys (outdated)...")
+                            keyManager.clearAllSessionKeys()
+                            Log.d("AuthRepository", "✅ Cleared all session keys")
+                        } else {
+                            Log.d("AuthRepository", "✅ Public key matches server (length: ${localPublicKey.length})")
+                        }
+                    } else if (serverPublicKey == null) {
+                        Log.w("AuthRepository", "Server has NO public key, uploading local key...")
+                        publicKeyBase64 = localPublicKey
+                        needsUpload = true
+                    }
+                } catch (e: Exception) {
+                    Log.e("AuthRepository", "Failed to verify public key with server", e)
+                }
+            }
+
+            // Step 3: Upload if server explicitly requires it
             if (serverRequiresPublicKey) {
                 if (publicKeyBase64 == null) {
                     publicKeyBase64 = keyManager.getRSAPublicKeyBase64()
@@ -98,13 +142,15 @@ class AuthRepository(context: Context) {
                 needsUpload = true
             }
 
+            // Step 4: Upload if needed
             if (needsUpload && publicKeyBase64 != null) {
-                val token = authManager.getValidAccessToken()
                 if (token != null) {
+                    Log.d("AuthRepository", "Uploading public key to server (length: ${publicKeyBase64.length})...")
                     api.updateProfile(
                         "Bearer $token",
                         ProfileUpdateRequest(publicKey = publicKeyBase64)
                     )
+                    Log.d("AuthRepository", "✅ Successfully uploaded public key to server")
                 }
             }
         } catch (e: Exception) {

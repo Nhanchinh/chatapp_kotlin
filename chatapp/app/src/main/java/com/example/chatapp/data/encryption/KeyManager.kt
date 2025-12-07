@@ -129,15 +129,67 @@ class KeyManager(private val context: Context) {
     }
     
     /**
+     * Verify that the current private key can decrypt data encrypted with the cached public key
+     * This helps diagnose key mismatch issues
+     */
+    fun verifyRSAKeyPairMatch(): Boolean {
+        return try {
+            val userId = getActiveUserId() ?: run {
+                Log.e(TAG, "No active user set, cannot verify key pair")
+                return false
+            }
+            
+            val publicKey = getRSAPublicKey()
+            val privateKey = getRSAPrivateKey()
+            
+            if (publicKey == null || privateKey == null) {
+                Log.e(TAG, "Public or private key missing, cannot verify")
+                return false
+            }
+            
+            // Test encryption/decryption
+            val testData = "test_key_verification_${System.currentTimeMillis()}".toByteArray()
+            val encrypted = CryptoManager.rsaEncrypt(testData, publicKey)
+            val decrypted = CryptoManager.rsaDecrypt(encrypted, privateKey)
+            
+            val match = testData.contentEquals(decrypted)
+            if (match) {
+                Log.d(TAG, "✅ RSA key pair verification PASSED - keys match!")
+            } else {
+                Log.e(TAG, "❌ RSA key pair verification FAILED - keys DO NOT match!")
+            }
+            
+            match
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ RSA key pair verification FAILED with exception", e)
+            false
+        }
+    }
+    
+    /**
      * Get the RSA private key from Android Keystore
      */
     fun getRSAPrivateKey(): PrivateKey? {
         return try {
-            val alias = rsaAlias(requireActiveUserId())
+            val userId = requireActiveUserId()
+            val alias = rsaAlias(userId)
+            Log.d(TAG, "Looking for RSA private key with alias: $alias")
+            
+            if (!keyStore.containsAlias(alias)) {
+                Log.e(TAG, "❌ Private key NOT FOUND in keystore for alias: $alias")
+                return null
+            }
+            
             val entry = keyStore.getEntry(alias, null) as? KeyStore.PrivateKeyEntry
-            entry?.privateKey
+            if (entry == null) {
+                Log.e(TAG, "❌ Keystore entry exists but is not a PrivateKeyEntry for alias: $alias")
+                return null
+            }
+            
+            Log.d(TAG, "✅ Private key found in keystore for alias: $alias")
+            entry.privateKey
         } catch (e: Exception) {
-            Log.e(TAG, "Error getting RSA private key", e)
+            Log.e(TAG, "❌ Error getting RSA private key", e)
             null
         }
     }
@@ -160,7 +212,9 @@ class KeyManager(private val context: Context) {
      */
     fun getRSAPublicKeyBase64(): String? {
         val userId = getActiveUserId() ?: return null
-        return encryptedPrefs.getString(publicKeyPref(userId), null)
+        val cachedKey = encryptedPrefs.getString(publicKeyPref(userId), null)
+        Log.d(TAG, "Getting public key for user $userId: ${if (cachedKey != null) "Found (length: ${cachedKey.length})" else "NOT FOUND"}")
+        return cachedKey
     }
     
     // ========== Session Key Management ==========
@@ -246,26 +300,45 @@ class KeyManager(private val context: Context) {
         getSessionKey(conversationId)?.let { return it }
         
         val userId = requireActiveUserId()
+        Log.d(TAG, "Attempting to decrypt session key for user $userId conversation: $conversationId")
+        
         // Get encrypted session key
         val encryptedKeyBase64 = encryptedPrefs.getString(encryptedSessionKeyPref(userId, conversationId), null)
-            ?: return null
+        if (encryptedKeyBase64 == null) {
+            Log.e(TAG, "No encrypted session key found in storage for conversation: $conversationId")
+            return null
+        }
+        Log.d(TAG, "Found encrypted session key in storage (length: ${encryptedKeyBase64.length})")
         
         // Decrypt with our RSA private key
-        val privateKey = getRSAPrivateKey() ?: return null
+        val privateKey = getRSAPrivateKey()
+        if (privateKey == null) {
+            Log.e(TAG, "RSA private key not found! Cannot decrypt session key for conversation: $conversationId")
+            return null
+        }
+        Log.d(TAG, "RSA private key found, algorithm: ${privateKey.algorithm}, format: ${privateKey.format}")
         
         return try {
+            Log.d(TAG, "Attempting RSA decryption...")
             val sessionKeyBytes = CryptoManager.rsaDecrypt(encryptedKeyBase64, privateKey)
+            Log.d(TAG, "RSA decryption successful, session key bytes length: ${sessionKeyBytes.size}")
+            
             val sessionKey = CryptoManager.decodeSecretKey(
                 Base64.encodeToString(sessionKeyBytes, Base64.NO_WRAP)
             )
+            Log.d(TAG, "Session key decoded successfully")
             
             // Cache the decrypted key
             storeSessionKey(conversationId, sessionKey)
             
-            Log.d(TAG, "Decrypted session key for user $userId conversation: $conversationId")
+            Log.d(TAG, "✅ Successfully decrypted and cached session key for user $userId conversation: $conversationId")
             sessionKey
+        } catch (e: javax.crypto.BadPaddingException) {
+            Log.e(TAG, "❌ RSA decryption failed: BadPaddingException - Wrong private key or corrupted data", e)
+            Log.e(TAG, "This usually means the encrypted key was encrypted with a DIFFERENT public key than the current private key")
+            null
         } catch (e: Exception) {
-            Log.e(TAG, "Error decrypting session key", e)
+            Log.e(TAG, "❌ Error decrypting session key: ${e.javaClass.simpleName} - ${e.message}", e)
             null
         }
     }

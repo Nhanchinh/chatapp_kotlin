@@ -3,6 +3,7 @@ package com.example.chatapp.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.chatapp.data.encryption.KeyManager
 import com.example.chatapp.data.local.AuthManager
 import com.example.chatapp.data.repository.AuthRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,6 +29,7 @@ data class AuthState(
 class AuthViewModel(application: Application) : AndroidViewModel(application) {
     private val authManager = AuthManager(application)
     private val repository = AuthRepository(application)
+    private val keyManager = KeyManager(application)
 
     private val _authState = MutableStateFlow(AuthState())
     val authState: StateFlow<AuthState> = _authState.asStateFlow()
@@ -44,6 +46,14 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         val token = if (wasLoggedIn) authManager.getValidAccessToken() else null
         val isLoggedIn = token != null && authManager.isLoggedInOnce()
         val user = if (isLoggedIn) authManager.getUserProfileOnce() else null
+
+        // Set active user in KeyManager if user is logged in
+        // This ensures keys are accessible when app restarts
+        if (isLoggedIn && user?.id != null) {
+            keyManager.setActiveUser(user.id)
+        } else {
+            keyManager.setActiveUser(null)
+        }
 
         _authState.value = AuthState(
             isLoggedIn = isLoggedIn,

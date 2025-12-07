@@ -451,6 +451,22 @@ class ChatRepository(private val context: Context) {
     }
     
     /**
+     * Delete outdated conversation key (both from server and local storage).
+     * This is used when the encrypted key cannot be decrypted due to key mismatch.
+     */
+    suspend fun deleteOutdatedConversationKey(conversationId: String): Result<Boolean> {
+        return try {
+            val token = authManager.getValidAccessToken()
+                ?: return Result.failure(Exception("Not authenticated"))
+            
+            val deleted = e2eeManager.deleteOutdatedConversationKey(conversationId, token)
+            Result.success(deleted)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+    
+    /**
      * Create a new conversation with encryption keys.
      * This follows the new flow:
      * 1. Prepare encrypted keys for all participants

@@ -235,6 +235,12 @@ interface ApiService {
         @Header("Authorization") token: String,
         @Path("conversation_id") conversationId: String
     ): GetKeyResponse
+    
+    @DELETE("conversation-keys/{conversation_id}/my-key")
+    suspend fun deleteMyConversationKey(
+        @Header("Authorization") token: String,
+        @Path("conversation_id") conversationId: String
+    ): SimpleMessageResponse
 }
 
 
