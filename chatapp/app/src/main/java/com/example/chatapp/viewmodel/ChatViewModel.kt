@@ -14,6 +14,9 @@ import com.example.chatapp.data.remote.WebSocketEvent
 import com.example.chatapp.data.remote.model.MessageAck
 import com.example.chatapp.data.remote.model.UserDto
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -151,7 +154,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     onSuccess = { response ->
                         try {
                             val me = currentUserId.value
-                            _conversations.value = response.items.mapNotNull { dto ->
+                            // First, create conversations with initial preview from backend
+                            val initialConversations = response.items.mapNotNull { dto ->
                                 try {
                                     val otherParticipant = dto.participants.firstOrNull { it != me }
                                     val displayName = otherParticipant?.let { friends[it] } ?: otherParticipant ?: "Unknown"
@@ -162,7 +166,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                                         ""
                                     }
                                     
-                                    // Kiểm tra xem last message có phải do current user gửi không
                                     val isLastMessageFromMe = dto.lastMessageSenderId == me
                                     val lastMessageText = dto.lastMessagePreview.orEmpty()
                                     
@@ -197,7 +200,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                                         lastMessage = displayMessage,
                                         lastTime = formattedTime,
                                         unreadCount = dto.unreadCounters[me] ?: 0,
-                                        isOnline = dto.isOnline ?: false, // Safe default: false if Redis not available
+                                        isOnline = dto.isOnline ?: false,
                                         participants = dto.participants,
                                         lastMessageAt = dto.lastMessageAt,
                                         lastMessagePreview = dto.lastMessagePreview,
@@ -205,10 +208,64 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                                     )
                                 } catch (e: Exception) {
                                     android.util.Log.e("ChatViewModel", "Error processing conversation ${dto.id}", e)
-                                    null // Skip this conversation if there's an error
+                                    null
                                 }
                             }
+                            
+                            // Display conversations first (fast initial render)
+                            _conversations.value = initialConversations
                             _conversationsLoading.value = false
+                            
+                            // Check deleted status asynchronously for conversations with non-encrypted previews
+                            // Only check top 20 conversations to avoid performance issues
+                            // The rest will be checked when user scrolls or when WebSocket event arrives
+                            val conversationsToCheck = initialConversations
+                                .take(20) // Limit to top 20 for performance
+                                .filter { conv ->
+                                    val preview = conv.lastMessagePreview.orEmpty()
+                                    preview.isNotEmpty() && 
+                                    preview != "[Encrypted Message]" && 
+                                    preview != "[Media]" &&
+                                    !preview.startsWith("🔒") &&
+                                    !preview.contains("Tin nhắn đã bị thu hồi") // Skip if already marked as deleted
+                                }
+                            
+                            // Fetch last messages in parallel (only for top conversations)
+                            // Use viewModelScope.launch since we're in a callback, not directly in coroutine scope
+                            if (conversationsToCheck.isNotEmpty()) {
+                                viewModelScope.launch {
+                                    try {
+                                        val deletedStatusMap: Map<String, Boolean> = coroutineScope {
+                                            conversationsToCheck.map { conv ->
+                                                async {
+                                                    val result = repository.getMessages(conv.id, limit = 1)
+                                                    val isDeleted = result.fold(
+                                                        onSuccess = { msgResponse ->
+                                                            msgResponse.items.isNotEmpty() && msgResponse.items.first().deleted
+                                                        },
+                                                        onFailure = { _ -> false }
+                                                    )
+                                                    conv.id to isDeleted
+                                                }
+                                            }.awaitAll().toMap()
+                                        }
+                                        
+                                        // Update conversations with deleted status (only if changed)
+                                        _conversations.value = _conversations.value.map { conv ->
+                                            if (deletedStatusMap[conv.id] == true) {
+                                                val isFromMe = conv.lastMessageSenderId == me
+                                                val deletedPreview = if (isFromMe) "Bạn: Tin nhắn đã bị thu hồi" else "Tin nhắn đã bị thu hồi"
+                                                conv.copy(lastMessage = deletedPreview)
+                                            } else {
+                                                conv
+                                            }
+                                        }
+                                    } catch (e: Exception) {
+                                        android.util.Log.e("ChatViewModel", "Error checking deleted status", e)
+                                        // Ignore errors, keep original preview
+                                    }
+                                }
+                            }
                         } catch (e: Exception) {
                             android.util.Log.e("ChatViewModel", "Error processing conversations", e)
                             _conversationsLoading.value = false
@@ -428,7 +485,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                             dto.content
                         }
 
-                        val displayText = if (dto.isEncrypted && dto.iv != null) {
+                        // Check if message is deleted
+                        val displayText = if (dto.deleted) {
+                            "Tin nhắn đã bị thu hồi"
+                        } else if (dto.isEncrypted && dto.iv != null) {
                             hasEncryptedMessages = true
                             val decrypted = repository.decryptMessage(dto.content, dto.iv, conversationId)
                             if (decrypted == null) {
@@ -465,7 +525,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                             mediaMimeType = dto.mediaMimeType,
                             mediaSize = dto.mediaSize,
                             mediaLocalPath = localMediaPath,
-                            mediaStatus = mediaStatus
+                            mediaStatus = mediaStatus,
+                            deleted = dto.deleted
                         )
                     }
                     _messages.value = mappedMessages
@@ -730,6 +791,41 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     _messages.value = updatedMessages
                 }
             }
+            is WebSocketEvent.MessageDeleted -> {
+                // Update message to show as deleted
+                val conversationId = event.conversationId ?: _currentConversationId.value
+                if (conversationId != null) {
+                    _messages.value = _messages.value.map { msg ->
+                        if (msg.id == event.messageId) {
+                            msg.copy(deleted = true, text = "Tin nhắn đã bị thu hồi")
+                        } else {
+                            msg
+                        }
+                    }
+                    // Update conversation preview immediately
+                    // Check if deleted message is the last message by comparing timestamps
+                    val deletedMessage = _messages.value.find { it.id == event.messageId }
+                    val lastMessage = _messages.value.maxByOrNull { it.timestamp }
+                    val isLastMessage = deletedMessage != null && lastMessage != null && 
+                                       deletedMessage.timestamp >= lastMessage.timestamp
+                    
+                    if (isLastMessage) {
+                        val me = currentUserId.value
+                        val isFromMe = deletedMessage?.isFromMe ?: false
+                        val displayText = if (isFromMe) "Bạn: Tin nhắn đã bị thu hồi" else "Tin nhắn đã bị thu hồi"
+                        
+                        _conversations.value = _conversations.value.map { conv ->
+                            if (conv.id == conversationId) {
+                                conv.copy(lastMessage = displayText)
+                            } else {
+                                conv
+                            }
+                        }
+                    }
+                    // Also refresh conversations to get updated preview from server
+                    refreshConversations()
+                }
+            }
             is WebSocketEvent.MessageAck -> applyAck(event.ack)
             is WebSocketEvent.NewMessage -> handleIncomingMessage(event)
             is WebSocketEvent.RawMessage -> {
@@ -834,7 +930,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     mediaId = event.message.mediaId,
                     mediaMimeType = event.message.mediaMimeType,
                     mediaSize = event.message.mediaSize,
-                    mediaStatus = mediaStatus
+                    mediaStatus = mediaStatus,
+                    deleted = false  // WebSocket messages are new, so not deleted
                 )
 
                 // Update conversation ID if we don't have it yet
@@ -1029,6 +1126,27 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun deleteMessage(messageId: String, onSuccess: () -> Unit, onError: (String) -> Unit) {
+        viewModelScope.launch {
+            repository.deleteMessage(messageId).fold(
+                onSuccess = {
+                    // Update message in local list to mark as deleted
+                    _messages.value = _messages.value.map { msg ->
+                        if (msg.id == messageId) {
+                            msg.copy(deleted = true, text = "Tin nhắn đã bị thu hồi")
+                        } else {
+                            msg
+                        }
+                    }
+                    onSuccess()
+                },
+                onFailure = { exception ->
+                    onError(exception.message ?: "Không thể xóa tin nhắn")
+                }
+            )
+        }
+    }
+
     fun deleteConversation(conversationId: String, onSuccess: () -> Unit, onError: (String) -> Unit) {
         viewModelScope.launch {
             repository.deleteConversation(conversationId).fold(
@@ -1073,6 +1191,22 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         }
                         
                         val lastMsg = response.items.first()
+                        
+                        // Check if message is deleted
+                        if (lastMsg.deleted) {
+                            _conversations.value = _conversations.value.map { conv ->
+                                if (conv.id == conversationId) {
+                                    val me = currentUserId.value
+                                    val isFromMe = lastMsg.senderId == me
+                                    val displayText = if (isFromMe) "Bạn: Tin nhắn đã bị thu hồi" else "Tin nhắn đã bị thu hồi"
+                                    conv.copy(lastMessage = displayText)
+                                } else {
+                                    conv
+                                }
+                            }
+                            decryptedConversations.add(conversationId)
+                            return@fold
+                        }
                         
                         // If message is NOT encrypted, just display it (old message before E2EE)
                         if (!lastMsg.isEncrypted || lastMsg.iv == null) {
@@ -1148,6 +1282,47 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 android.util.Log.e("ChatViewModel", "Error decrypting preview", e)
                 // Mark as processed even on error
+                decryptedConversations.add(conversationId)
+            }
+        }
+    }
+
+    /**
+     * Check if the last message of a conversation is deleted
+     * This is used for non-encrypted messages to update preview
+     */
+    private fun checkLastMessageDeletedStatus(conversationId: String) {
+        viewModelScope.launch {
+            try {
+                val result = repository.getMessages(conversationId, limit = 1)
+                result.fold(
+                    onSuccess = { response ->
+                        if (response.items.isNotEmpty()) {
+                            val lastMsg = response.items.first()
+                            if (lastMsg.deleted) {
+                                val me = currentUserId.value
+                                val isFromMe = lastMsg.senderId == me
+                                val displayText = if (isFromMe) "Bạn: Tin nhắn đã bị thu hồi" else "Tin nhắn đã bị thu hồi"
+                                
+                                _conversations.value = _conversations.value.map { conv ->
+                                    if (conv.id == conversationId) {
+                                        conv.copy(lastMessage = displayText)
+                                    } else {
+                                        conv
+                                    }
+                                }
+                            }
+                        }
+                        // Mark as processed
+                        decryptedConversations.add(conversationId)
+                    },
+                    onFailure = { error ->
+                        android.util.Log.e("ChatViewModel", "Failed to check deleted status for $conversationId", error)
+                        decryptedConversations.add(conversationId)
+                    }
+                )
+            } catch (e: Exception) {
+                android.util.Log.e("ChatViewModel", "Error checking deleted status", e)
                 decryptedConversations.add(conversationId)
             }
         }

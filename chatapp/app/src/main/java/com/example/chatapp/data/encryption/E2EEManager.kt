@@ -317,5 +317,12 @@ class E2EEManager(context: Context) {
     suspend fun storeSessionKeyForConversation(conversationId: String, sessionKey: SecretKey) {
         keyManager.storeSessionKey(conversationId, sessionKey)
     }
+    
+    /**
+     * Clear session key for a conversation (used when deleting conversation)
+     */
+    suspend fun clearSessionKeyForConversation(conversationId: String) {
+        keyManager.clearSessionKey(conversationId)
+    }
 }
 

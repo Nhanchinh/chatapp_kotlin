@@ -31,7 +31,8 @@ data class MessageDto(
     @Json(name = "is_encrypted") val isEncrypted: Boolean = false,
     @Json(name = "media_id") val mediaId: String? = null,
     @Json(name = "media_mime_type") val mediaMimeType: String? = null,
-    @Json(name = "media_size") val mediaSize: Long? = null
+    @Json(name = "media_size") val mediaSize: Long? = null,
+    val deleted: Boolean = false  // True if message is deleted/recalled
 )
 
 data class MessagesResponse(

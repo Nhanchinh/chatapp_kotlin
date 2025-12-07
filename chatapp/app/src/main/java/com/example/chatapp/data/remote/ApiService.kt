@@ -158,6 +158,12 @@ interface ApiService {
         @Path("conversation_id") conversationId: String
     ): FriendActionResponse
 
+    @DELETE("messages/{message_id}")
+    suspend fun deleteMessage(
+        @Header("Authorization") token: String,
+        @Path("message_id") messageId: String
+    ): FriendActionResponse
+
     // Presence API
     @GET("presence/{user_id}")
     suspend fun getPresence(

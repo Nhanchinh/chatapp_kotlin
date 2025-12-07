@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -24,6 +25,9 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import kotlinx.coroutines.launch
 import com.example.chatapp.viewmodel.AuthViewModel
 import com.example.chatapp.ui.common.KeyboardDismissWrapper
+import com.example.chatapp.data.local.SettingsManager
+import android.content.Context
+import androidx.compose.ui.platform.LocalContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -31,10 +35,22 @@ fun SettingsScreen(
     onBack: () -> Unit,
     authViewModel: AuthViewModel
 ) {
+    val context = LocalContext.current
+    val settingsManager = remember { SettingsManager(context) }
+    
     var notificationsEnabled by remember { mutableStateOf(true) }
     var soundEnabled by remember { mutableStateOf(true) }
     var vibrationEnabled by remember { mutableStateOf(true) }
     var readReceiptEnabled by remember { mutableStateOf(true) }
+    
+    // E2EE setting - collect from Flow
+    var e2eeEnabled by remember { mutableStateOf(true) }
+    LaunchedEffect(Unit) {
+        settingsManager.isE2EEEnabled.collect { enabled ->
+            e2eeEnabled = enabled
+        }
+    }
+    
     var oldPassword by remember { mutableStateOf("") }
     var newPassword by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
@@ -273,6 +289,36 @@ fun SettingsScreen(
                         fontWeight = FontWeight.Bold
                     )
                 }
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                // E2EE Toggle
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Mã hóa đầu cuối (E2EE)",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = if (e2eeEnabled) "Tin nhắn được mã hóa" else "Tin nhắn không được mã hóa",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray
+                        )
+                    }
+                    Switch(
+                        checked = e2eeEnabled,
+                        onCheckedChange = { enabled ->
+                            scope.launch {
+                                settingsManager.setE2EEEnabled(enabled)
+                            }
+                        }
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(12.dp))
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedTextField(
                     value = oldPassword,

@@ -3,6 +3,7 @@ package com.example.chatapp.ui.chat
 import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,7 +36,10 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -61,6 +65,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.focus.onFocusEvent
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -99,6 +104,7 @@ fun ChatScreen(
     var lastMessageCount by remember { mutableStateOf(0) }
     var isInitialLoad by remember { mutableStateOf(true) }
     var isRefreshing by remember { mutableStateOf(false) }
+    var messageToDelete by remember { mutableStateOf<Message?>(null) }  // Message to delete (for confirmation dialog)
     val scope = rememberCoroutineScope()
     val imagePickerLauncher = rememberImagePickerLauncher { uri ->
         uri?.let { chatViewModel.sendImage(it) }
@@ -289,6 +295,12 @@ fun ChatScreen(
                                 if (mediaId != null && !convoId.isNullOrBlank()) {
                                     onMediaClick(it.id, mediaId, convoId, it.mediaMimeType)
                                 }
+                            },
+                            onLongPress = { msg ->
+                                // Only allow deleting own messages that are not already deleted
+                                if (msg.isFromMe && !msg.deleted) {
+                                    messageToDelete = msg  // Show confirmation dialog
+                                }
                             }
                         )
                     }
@@ -339,6 +351,39 @@ fun ChatScreen(
                     modifier = Modifier.imePadding()
                 )
             }
+        }
+        
+        // Delete message confirmation dialog
+        messageToDelete?.let { msg ->
+            AlertDialog(
+                onDismissRequest = { messageToDelete = null },
+                title = { Text("Xóa tin nhắn") },
+                text = { Text("Bạn có chắc chắn muốn xóa tin nhắn này? Tin nhắn sẽ bị thu hồi và không thể khôi phục.") },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            chatViewModel.deleteMessage(msg.id,
+                                onSuccess = {
+                                    messageToDelete = null
+                                },
+                                onError = { error ->
+                                    messageToDelete = null
+                                    // Could show snackbar here
+                                }
+                            )
+                        }
+                    ) {
+                        Text("Xóa")
+                    }
+                },
+                dismissButton = {
+                    OutlinedButton(
+                        onClick = { messageToDelete = null }
+                    ) {
+                        Text("Hủy")
+                    }
+                }
+            )
         }
     }
 }
@@ -410,11 +455,25 @@ private fun MessageBubble(
     message: Message,
     modifier: Modifier = Modifier,
     onRetryMedia: (Message) -> Unit,
-    onMediaClick: ((Message) -> Unit)? = null
+    onMediaClick: ((Message) -> Unit)? = null,
+    onLongPress: ((Message) -> Unit)? = null
 ) {
     val isFromMe = message.isFromMe
+    val isDeleted = message.deleted
+    
     Row(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .then(
+                if (isFromMe && !isDeleted && onLongPress != null) {
+                    Modifier.combinedClickable(
+                        onClick = { },
+                        onLongClick = { onLongPress(message) }
+                    )
+                } else {
+                    Modifier
+                }
+            ),
         horizontalArrangement = if (isFromMe) Arrangement.End else Arrangement.Start
     ) {
         if (!isFromMe) {
@@ -439,15 +498,29 @@ private fun MessageBubble(
                     modifier = Modifier
                         .widthIn(max = 280.dp)
                         .background(
-                            color = if (isFromMe) Color(0xFF2196F3) else Color(0xFFE5E5EA),
+                            color = if (isDeleted) {
+                                Color(0xFFE0E0E0)  // Gray background for deleted messages
+                            } else if (isFromMe) {
+                                Color(0xFF2196F3)
+                            } else {
+                                Color(0xFFE5E5EA)
+                            },
                             shape = RoundedCornerShape(16.dp)
                         )
                         .padding(horizontal = 12.dp, vertical = 8.dp)
                 ) {
                     Text(
                         text = message.text,
-                        color = if (isFromMe) Color.White else Color.Black,
-                        style = MaterialTheme.typography.bodyMedium
+                        color = if (isDeleted) {
+                            Color(0xFF757575)  // Gray text for deleted messages
+                        } else if (isFromMe) {
+                            Color.White
+                        } else {
+                            Color.Black
+                        },
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontStyle = if (isDeleted) FontStyle.Italic else FontStyle.Normal
+                        )
                     )
                 }
             }

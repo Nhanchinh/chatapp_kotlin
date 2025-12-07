@@ -4,8 +4,10 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import android.webkit.MimeTypeMap
+import com.example.chatapp.data.encryption.AESEncryptedData
 import com.example.chatapp.data.encryption.E2EEManager
 import com.example.chatapp.data.local.AuthManager
+import com.example.chatapp.data.local.SettingsManager
 import com.example.chatapp.data.model.MediaItem
 import com.example.chatapp.data.remote.ApiClient
 import com.example.chatapp.data.remote.WebSocketClient
@@ -23,6 +25,7 @@ class ChatRepository(private val context: Context) {
     private val TAG = "ChatRepository"
     private val api = ApiClient.apiService
     private val authManager = AuthManager(context)
+    private val settingsManager = SettingsManager(context)
     private val webSocketClient = WebSocketClient()
     private val e2eeManager = E2EEManager(context)
     private val mediaCache = mutableMapOf<String, String>()
@@ -101,19 +104,22 @@ class ChatRepository(private val context: Context) {
             val token = authManager.getValidAccessToken()
                 ?: return Result.failure(Exception("Not authenticated"))
             
-            // Try to encrypt message if we have a conversation with encryption setup
+            // Try to encrypt message if E2EE is enabled and we have a conversation with encryption setup
             var finalContent = content
             var iv: String? = null
             var isEncrypted = false
             
-            if (conversationId != null && e2eeManager.isEncryptionAvailable(conversationId)) {
+            // Check if E2EE is enabled in settings
+            val e2eeEnabled = settingsManager.getE2EEEnabled()
+            
+            if (e2eeEnabled && conversationId != null && e2eeManager.isEncryptionAvailable(conversationId)) {
                 try {
                     val encrypted = e2eeManager.encryptMessage(content, conversationId, token)
                     if (encrypted != null) {
                         finalContent = encrypted.ciphertext
                         iv = encrypted.iv
                         isEncrypted = true
-                        Log.d(TAG, "Message encrypted successfully")
+                        Log.d(TAG, "Message encrypted successfully (E2EE enabled)")
                     } else {
                         Log.w(TAG, "Encryption failed, sending plaintext")
                     }
@@ -121,7 +127,11 @@ class ChatRepository(private val context: Context) {
                     Log.e(TAG, "Error encrypting message, sending plaintext", e)
                 }
             } else {
-                Log.d(TAG, "No encryption available for conversation, sending plaintext")
+                if (!e2eeEnabled) {
+                    Log.d(TAG, "E2EE is disabled in settings, sending plaintext")
+                } else {
+                    Log.d(TAG, "No encryption available for conversation, sending plaintext")
+                }
             }
             
             webSocketClient.sendMessage(userId, to, finalContent, clientMessageId, iv, isEncrypted)
@@ -152,8 +162,20 @@ class ChatRepository(private val context: Context) {
 
             val mimeType = context.contentResolver.getType(mediaUri) ?: "application/octet-stream"
 
-            val encrypted = e2eeManager.encryptBytes(bytes, conversationId, token)
-                ?: return Result.failure(Exception("Không thể mã hóa ảnh"))
+            // Check if E2EE is enabled in settings
+            val e2eeEnabled = settingsManager.getE2EEEnabled()
+            
+            val encrypted = if (e2eeEnabled) {
+                e2eeManager.encryptBytes(bytes, conversationId, token)
+                    ?: return Result.failure(Exception("Không thể mã hóa ảnh"))
+            } else {
+                // E2EE disabled, send plaintext (base64 encoded)
+                val base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                com.example.chatapp.data.encryption.AESEncryptedData(
+                    ciphertext = base64,
+                    iv = ""  // No IV for plaintext
+                )
+            }
 
             val uploadResponse = api.uploadMedia(
                 "Bearer $token",
@@ -339,11 +361,30 @@ class ChatRepository(private val context: Context) {
         }
     }
 
+    suspend fun deleteMessage(messageId: String): Result<FriendActionResponse> {
+        return try {
+            val token = authManager.getValidAccessToken() ?: return Result.failure(Exception("Not authenticated"))
+            val response = api.deleteMessage("Bearer $token", messageId)
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun deleteConversation(conversationId: String): Result<FriendActionResponse> {
         return try {
             val token = authManager.getValidAccessToken() ?: return Result.failure(Exception("Not authenticated"))
             val response = api.deleteConversation("Bearer $token", conversationId)
-             Result.success(response)
+            
+            // Clear local session key for this conversation
+            try {
+                e2eeManager.clearSessionKeyForConversation(conversationId)
+                Log.d(TAG, "Cleared local session key for deleted conversation $conversationId")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to clear local session key for conversation $conversationId", e)
+            }
+            
+            Result.success(response)
         } catch (e: Exception) {
             Result.failure(e)
         }
