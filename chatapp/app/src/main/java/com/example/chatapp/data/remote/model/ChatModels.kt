@@ -33,7 +33,8 @@ data class MessageDto(
     @Json(name = "media_mime_type") val mediaMimeType: String? = null,
     @Json(name = "media_size") val mediaSize: Long? = null,
     val deleted: Boolean = false,  // True if message is deleted/recalled
-    @Json(name = "reply_to") val replyTo: String? = null  // ID of message being replied to
+    @Json(name = "reply_to") val replyTo: String? = null,  // ID of message being replied to
+    val reactions: Map<String, String>? = null  // {user_id: emoji} - Simple reactions
 )
 
 data class MessagesResponse(

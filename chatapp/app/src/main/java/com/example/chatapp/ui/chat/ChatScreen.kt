@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -29,13 +31,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.ThumbUp
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material.icons.filled.Reply
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -43,6 +51,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -56,23 +65,31 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.focus.onFocusEvent
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material.icons.filled.Reply
 import com.example.chatapp.data.model.MediaStatus
 import com.example.chatapp.data.model.Message
 import com.example.chatapp.ui.common.KeyboardDismissWrapper
@@ -107,6 +124,7 @@ fun ChatScreen(
     var messageToDelete by remember { mutableStateOf<Message?>(null) }  // Message to delete (for confirmation dialog)
     var replyingToMessage by remember { mutableStateOf<Message?>(null) }  // Message being replied to
     var showMessageActions by remember { mutableStateOf<Message?>(null) }  // Show action menu for message
+    var showMoreMenu by remember { mutableStateOf<Message?>(null) }  // Show "More" submenu
     var highlightedMessageId by remember { mutableStateOf<String?>(null) }  // Message ID being highlighted
     val scope = rememberCoroutineScope()
     val imagePickerLauncher = rememberImagePickerLauncher { uri ->
@@ -380,52 +398,126 @@ fun ChatScreen(
             }
         }
         
-        // Message actions menu (Reply / Delete)
-        showMessageActions?.let { msg ->
-            AlertDialog(
+        // Bottom sheet actions (Reactions / Reply / Copy / Translate / Delete)
+        val clipboardManager = LocalClipboardManager.current
+        if (showMessageActions != null) {
+            val msg = showMessageActions!!
+            ModalBottomSheet(
                 onDismissRequest = { showMessageActions = null },
-                title = { Text("Tùy chọn") },
-                text = {
-                    Column {
-                        // Reply option (available for all messages)
-                        Button(
-                            onClick = {
-                                replyingToMessage = msg
-                                showMessageActions = null
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Trả lời")
-                        }
-                        
-                        Spacer(modifier = Modifier.height(8.dp))
-                        
-                        // Delete option (only for own messages)
-                        if (msg.isFromMe) {
-                            Button(
-                                onClick = {
-                                    showMessageActions = null
-                                    messageToDelete = msg
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                                    containerColor = Color.Red
-                                )
-                            ) {
-                                Text("Xóa tin nhắn")
-                            }
-                        }
-                    }
-                },
-                confirmButton = {},
-                dismissButton = {
-                    OutlinedButton(
-                        onClick = { showMessageActions = null }
+                sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Reaction picker row (Messenger-like)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Đóng")
+                        val commonEmojis = listOf("❤️", "😂", "😮", "😢", "😡", "👍", "🙏")
+                        commonEmojis.forEach { emoji ->
+                            Text(
+                                text = emoji,
+                                fontSize = 28.sp,
+                                modifier = Modifier
+                                    .clickable {
+                                        chatViewModel.reactToMessage(msg.id, emoji)
+                                        showMessageActions = null
+                                    }
+                                    .padding(4.dp)
+                            )
+                        }
                     }
+
+                    // Action buttons row
+                    Row(
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        ActionChip(
+                            icon = Icons.Default.Reply,
+                            label = "Trả lời"
+                        ) {
+                            replyingToMessage = msg
+                            showMessageActions = null
+                        }
+                        ActionChip(
+                            icon = Icons.Default.ContentCopy,
+                            label = "Sao chép"
+                        ) {
+                            clipboardManager.setText(AnnotatedString(msg.text))
+                            showMessageActions = null
+                        }
+                        ActionChip(
+                            icon = Icons.Default.Translate,
+                            label = "Dịch"
+                        ) {
+                            // Placeholder: hook into translation later
+                            showMessageActions = null
+                        }
+                        ActionChip(
+                            icon = Icons.Default.MoreHoriz,
+                            label = "Khác"
+                        ) {
+                            // Show "More" submenu
+                            showMoreMenu = msg
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
-            )
+            }
+        }
+        
+        // "More" submenu (with Delete option)
+        if (showMoreMenu != null) {
+            val msg = showMoreMenu!!
+            ModalBottomSheet(
+                onDismissRequest = { showMoreMenu = null },
+                sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Delete option (only for own messages)
+                    if (msg.isFromMe) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    showMoreMenu = null
+                                    showMessageActions = null  // Close main menu too
+                                    messageToDelete = msg
+                                }
+                                .padding(horizontal = 16.dp, vertical = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = null,
+                                tint = Color(0xFFE91E63),
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Text(
+                                text = "Xóa tin nhắn",
+                                color = Color(0xFFE91E63),
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
         }
         
         // Delete message confirmation dialog
@@ -643,39 +735,105 @@ private fun MessageBubble(
             val shouldShowText = message.mediaId == null && message.text.isNotBlank()
             if (shouldShowText) {
                 Box(
-                    modifier = Modifier
-                        .widthIn(max = 280.dp)
-                        .background(
-                            color = if (isDeleted) {
-                                Color(0xFFE0E0E0)  // Gray background for deleted messages
-                            } else if (isFromMe) {
-                                Color(0xFF2196F3)
-                            } else {
-                                Color(0xFFE5E5EA)
-                            },
-                            shape = if (repliedMessage != null) {
-                                RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp, topStart = 4.dp, topEnd = 4.dp)
-                            } else {
-                                RoundedCornerShape(16.dp)
-                            }
-                        )
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                    modifier = Modifier.widthIn(max = 280.dp)
                 ) {
-                    Text(
-                        text = message.text,
-                        color = if (isDeleted) {
-                            Color(0xFF757575)  // Gray text for deleted messages
-                        } else if (isFromMe) {
-                            Color.White
-                        } else {
-                            Color.Black
-                        },
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontStyle = if (isDeleted) FontStyle.Italic else FontStyle.Normal
+                    Box(
+                        modifier = Modifier
+                            .background(
+                                color = if (isDeleted) {
+                                    Color(0xFFE0E0E0)  // Gray background for deleted messages
+                                } else if (isFromMe) {
+                                    Color(0xFF2196F3)
+                                } else {
+                                    Color(0xFFE5E5EA)
+                                },
+                                shape = if (repliedMessage != null) {
+                                    RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp, topStart = 4.dp, topEnd = 4.dp)
+                                } else {
+                                    RoundedCornerShape(16.dp)
+                                }
+                            )
+                            .padding(
+                                PaddingValues(
+                                    start = 12.dp,
+                                    end = 12.dp,
+                                    top = 8.dp,
+                                    bottom = if (message.reactions.isNullOrEmpty()) 8.dp else 16.dp  // Extra padding nếu có reactions
+                                )
+                            )
+                    ) {
+                        Text(
+                            text = message.text,
+                            color = if (isDeleted) {
+                                Color(0xFF757575)  // Gray text for deleted messages
+                            } else if (isFromMe) {
+                                Color.White
+                            } else {
+                                Color.Black
+                            },
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontStyle = if (isDeleted) FontStyle.Italic else FontStyle.Normal
+                            )
                         )
-                    )
+                    }
+                    
+                    // Reactions ở góc dưới (như Messenger) - ra mép, không che chữ
+                    message.reactions?.let { reactions ->
+                        if (reactions.isNotEmpty()) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                modifier = Modifier
+                                    .align(if (isFromMe) Alignment.BottomStart else Alignment.BottomEnd)
+                                    .offset(
+                                        x = if (isFromMe) (-2).dp else 2.dp,  // Ra mép ngoài
+                                        y = 4.dp  // Gần mép dưới hơn
+                                    )
+                                    .background(
+                                        color = Color.White,
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                    .padding(horizontal = 3.dp, vertical = 1.dp)
+                            ) {
+                                // Group reactions by emoji và chỉ hiển thị emoji (không hiện count)
+                                val emojiGroups = reactions.entries.groupBy { it.value }
+                                emojiGroups.forEach { (emoji, _) ->
+                                    Text(
+                                        text = emoji,
+                                        fontSize = 14.sp,
+                                        modifier = Modifier.padding(horizontal = 1.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                // For media messages, show reactions below
+                message.reactions?.let { reactions ->
+                    if (reactions.isNotEmpty()) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            modifier = Modifier
+                                .padding(top = 4.dp)
+                                .background(
+                                    color = Color.White,
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                .padding(horizontal = 3.dp, vertical = 1.dp)
+                        ) {
+                            val emojiGroups = reactions.entries.groupBy { it.value }
+                            emojiGroups.forEach { (emoji, _) ->
+                                Text(
+                                    text = emoji,
+                                    fontSize = 14.sp,
+                                    modifier = Modifier.padding(horizontal = 1.dp)
+                                )
+                            }
+                        }
+                    }
                 }
             }
+            
             if (isFromMe) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -691,6 +849,65 @@ private fun MessageBubble(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ReactionChip(
+    emoji: String,
+    count: Int,
+    onClick: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = Color(0xFFE0E0E0).copy(alpha = 0.6f),
+        onClick = onClick
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+        ) {
+            Text(text = emoji, fontSize = 14.sp)
+            if (count > 1) {
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    text = count.toString(),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.Gray
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActionChip(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.clickable { onClick() }
+    ) {
+        Surface(
+            shape = CircleShape,
+            color = Color(0xFFF2F2F2)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = Color(0xFF2196F3),
+                modifier = Modifier.padding(10.dp)
+            )
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.Gray
+        )
     }
 }
 

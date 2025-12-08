@@ -529,7 +529,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                             mediaLocalPath = localMediaPath,
                             mediaStatus = mediaStatus,
                             deleted = dto.deleted,
-                            replyTo = dto.replyTo
+                            replyTo = dto.replyTo,
+                            reactions = dto.reactions
                         )
                     }
                     _messages.value = mappedMessages
@@ -649,6 +650,26 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 onFailure = { error ->
                     _messages.value = _messages.value.filterNot { it.id == optimistic.id }
                     _messagesError.value = error.message
+                }
+            )
+        }
+    }
+
+    fun reactToMessage(messageId: String, emoji: String) {
+        viewModelScope.launch {
+            repository.reactToMessage(messageId, emoji).fold(
+                onSuccess = { response ->
+                    // Update local message reactions optimistically
+                    _messages.value = _messages.value.map { msg ->
+                        if (msg.id == messageId) {
+                            msg.copy(reactions = response.reactions)
+                        } else {
+                            msg
+                        }
+                    }
+                },
+                onFailure = { error ->
+                    _messagesError.value = "Failed to react: ${error.message}"
                 }
             )
         }
@@ -850,6 +871,16 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             }
             is WebSocketEvent.MessageAck -> applyAck(event.ack)
             is WebSocketEvent.NewMessage -> handleIncomingMessage(event)
+            is WebSocketEvent.Reaction -> {
+                // Update message reactions
+                _messages.value = _messages.value.map { msg ->
+                    if (msg.id == event.messageId) {
+                        msg.copy(reactions = event.reactions)
+                    } else {
+                        msg
+                    }
+                }
+            }
             is WebSocketEvent.RawMessage -> {
                 // Try to parse raw message as JSON manually
                 android.util.Log.d("ChatViewModel", "Received raw message: ${event.text}")
@@ -972,7 +1003,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     mediaSize = event.message.mediaSize,
                     mediaStatus = mediaStatus,
                     deleted = false,  // WebSocket messages are new, so not deleted
-                    replyTo = event.message.replyTo
+                    replyTo = event.message.replyTo,
+                    reactions = null  // Reactions will be updated via WebSocket events
                 )
 
                 // Update conversation ID if we don't have it yet

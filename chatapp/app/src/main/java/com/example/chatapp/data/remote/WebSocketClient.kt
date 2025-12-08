@@ -136,6 +136,31 @@ class WebSocketClient {
                                 ))
                                 return
                             }
+                            "reaction" -> {
+                                // Parse reaction event: {type:"reaction", message_id, user_id, emoji, reactions}
+                                try {
+                                    val jsonObj = org.json.JSONObject(text)
+                                    val messageId = jsonObj.optString("message_id", "")
+                                    val userId = jsonObj.optString("user_id", "")
+                                    val emoji = jsonObj.optString("emoji", "")
+                                    val reactionsObj = jsonObj.optJSONObject("reactions")
+                                    val reactionsMap = mutableMapOf<String, String>()
+                                    reactionsObj?.let {
+                                        it.keys().forEach { key ->
+                                            reactionsMap[key] = it.getString(key)
+                                        }
+                                    }
+                                    trySend(WebSocketEvent.Reaction(
+                                        messageId = messageId,
+                                        userId = userId,
+                                        emoji = emoji,
+                                        reactions = reactionsMap
+                                    ))
+                                } catch (e: Exception) {
+                                    android.util.Log.e("WebSocketClient", "Failed to parse reaction event", e)
+                                }
+                                return
+                            }
                         }
                     }
                     
@@ -335,6 +360,12 @@ sealed class WebSocketEvent {
     data class MessageDelivered(val messageId: String) : WebSocketEvent()
     data class MessageSeen(val messageId: String, val conversationId: String? = null) : WebSocketEvent()
     data class MessageDeleted(val messageId: String, val conversationId: String? = null) : WebSocketEvent()
+    data class Reaction(
+        val messageId: String,
+        val userId: String,
+        val emoji: String,
+        val reactions: Map<String, String>
+    ) : WebSocketEvent()
     data class RawMessage(val text: String) : WebSocketEvent()
     data class Error(val message: String) : WebSocketEvent()
     data class Closing(val code: Int, val reason: String) : WebSocketEvent()

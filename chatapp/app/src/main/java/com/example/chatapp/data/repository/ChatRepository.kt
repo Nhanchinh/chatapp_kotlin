@@ -10,6 +10,8 @@ import com.example.chatapp.data.local.AuthManager
 import com.example.chatapp.data.local.SettingsManager
 import com.example.chatapp.data.model.MediaItem
 import com.example.chatapp.data.remote.ApiClient
+import com.example.chatapp.data.remote.ReactRequest
+import com.example.chatapp.data.remote.ReactResponse
 import com.example.chatapp.data.remote.WebSocketClient
 import com.example.chatapp.data.remote.WebSocketEvent
 import com.example.chatapp.data.remote.model.*
@@ -366,6 +368,16 @@ class ChatRepository(private val context: Context) {
         return try {
             val token = authManager.getValidAccessToken() ?: return Result.failure(Exception("Not authenticated"))
             val response = api.deleteMessage("Bearer $token", messageId)
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun reactToMessage(messageId: String, emoji: String): Result<ReactResponse> {
+        return try {
+            val token = authManager.getValidAccessToken() ?: return Result.failure(Exception("Not authenticated"))
+            val response = api.reactToMessage("Bearer $token", messageId, ReactRequest(emoji))
             Result.success(response)
         } catch (e: Exception) {
             Result.failure(e)

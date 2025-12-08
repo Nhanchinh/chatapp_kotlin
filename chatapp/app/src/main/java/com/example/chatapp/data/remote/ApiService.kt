@@ -33,6 +33,7 @@ import com.example.chatapp.data.remote.model.CreateConversationResponse
 import com.example.chatapp.data.remote.model.MediaDownloadResponse
 import com.example.chatapp.data.remote.model.MediaUploadRequest
 import com.example.chatapp.data.remote.model.MediaUploadResponse
+import com.squareup.moshi.Json
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.Field
@@ -44,6 +45,15 @@ import retrofit2.http.POST
 import retrofit2.http.Query
 import retrofit2.http.Path
 
+// Reactions API Models
+data class ReactRequest(
+    val emoji: String
+)
+
+data class ReactResponse(
+    @Json(name = "message_id") val messageId: String,
+    val reactions: Map<String, String> = emptyMap()
+)
 
 interface ApiService {
     @POST("auth/register")
@@ -163,6 +173,13 @@ interface ApiService {
         @Header("Authorization") token: String,
         @Path("message_id") messageId: String
     ): FriendActionResponse
+
+    @POST("messages/{message_id}/react")
+    suspend fun reactToMessage(
+        @Header("Authorization") token: String,
+        @Path("message_id") messageId: String,
+        @Body body: ReactRequest
+    ): ReactResponse
 
     // Presence API
     @GET("presence/{user_id}")
