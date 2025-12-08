@@ -13,3 +13,19 @@ fun rememberImagePickerLauncher(onImageSelected: (Uri?) -> Unit) =
         onImageSelected(uri)
     }
 
+@Composable
+fun rememberVideoPickerLauncher(onVideoSelected: (Uri?) -> Unit) =
+    rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        onVideoSelected(uri)
+    }
+
+@Composable
+fun rememberFilePickerLauncher(onFileSelected: (Uri?) -> Unit) =
+    rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        onFileSelected(uri)
+    }
+

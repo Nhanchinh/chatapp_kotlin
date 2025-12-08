@@ -1,6 +1,9 @@
 package com.example.chatapp.ui.chat
 
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
+import androidx.core.content.FileProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -74,14 +77,55 @@ fun MediaViewerScreen(
             }
         } else {
             localPath?.let { path ->
-                AsyncImage(
-                    model = File(path),
-                    contentDescription = null,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black)
-                )
+                val isVideo = mimeType?.startsWith("video/") == true
+                
+                if (isVideo) {
+                    // For video: open with external player
+                    LaunchedEffect(path) {
+                        try {
+                            val videoFile = File(path)
+                            val videoUri = if (path.startsWith("content://")) {
+                                Uri.parse(path)
+                            } else {
+                                // Use FileProvider for file:// URIs
+                                FileProvider.getUriForFile(
+                                    context,
+                                    "${context.packageName}.fileprovider",
+                                    videoFile
+                                )
+                            }
+                            
+                            val intent = Intent(Intent.ACTION_VIEW).apply {
+                                setDataAndType(videoUri, mimeType)
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            
+                            if (intent.resolveActivity(context.packageManager) != null) {
+                                context.startActivity(intent)
+                                onBack() // Close viewer after opening video
+                            } else {
+                                Toast.makeText(context, "Không tìm thấy ứng dụng để phát video", Toast.LENGTH_SHORT).show()
+                            }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                            Toast.makeText(context, "Không thể mở video: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    
+                    // Show loading while opening video
+                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = Color.White)
+                } else {
+                    // For images: show image
+                    AsyncImage(
+                        model = File(path),
+                        contentDescription = null,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black)
+                    )
+                }
             }
         }
 

@@ -464,6 +464,29 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         return repository.ensureMediaCached(mediaId, conversationId).getOrNull()
     }
 
+    fun downloadAndOpenFile(mediaId: String, conversationId: String, mimeType: String?) {
+        viewModelScope.launch {
+            val cachedPath = ensureMediaCached(mediaId, conversationId)
+            if (cachedPath != null) {
+                // File already cached, save to Downloads and open
+                val context = getApplication<android.app.Application>()
+                val fileName = cachedPath.substringAfterLast("/")
+                val success = com.example.chatapp.ui.common.saveFileToDownloads(
+                    context,
+                    cachedPath,
+                    mimeType,
+                    fileName
+                )
+                if (!success) {
+                    android.util.Log.e("ChatViewModel", "Failed to save file to Downloads")
+                    _messagesError.value = "Không thể lưu file"
+                }
+            } else {
+                _messagesError.value = "Không thể tải file"
+            }
+        }
+    }
+
     private fun loadMessages(conversationId: String, limit: Int = 50, cursor: String? = null) {
         viewModelScope.launch {
             _messagesLoading.value = true
@@ -676,6 +699,18 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun sendImage(uri: Uri) {
+        sendMedia(uri, "[Đang gửi ảnh]", "[Đã gửi ảnh]", "[Gửi ảnh thất bại]")
+    }
+
+    fun sendVideo(uri: Uri) {
+        sendMedia(uri, "[Đang gửi video]", "[Đã gửi video]", "[Gửi video thất bại]")
+    }
+
+    fun sendFile(uri: Uri) {
+        sendMedia(uri, "[Đang gửi file]", "[Đã gửi file]", "[Gửi file thất bại]")
+    }
+
+    private fun sendMedia(uri: Uri, uploadingText: String, successText: String, failedText: String) {
         val to = _currentContactId.value ?: return
         var conversationId = _currentConversationId.value
         viewModelScope.launch {
@@ -707,7 +742,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             val myDisplayName = friends[me] ?: me
             val optimistic = Message(
                 id = "temp_media_$clientMessageId",
-                text = "[Đang gửi ảnh]",
+                text = uploadingText,
                 timestamp = System.currentTimeMillis(),
                 isFromMe = true,
                 senderName = myDisplayName,
@@ -734,7 +769,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                             mediaSize = mediaResult.size,
                             mediaLocalPath = mediaResult.localPath,
                             mediaStatus = MediaStatus.READY,
-                            text = "[Đã gửi ảnh]"
+                            text = successText
                         )
                     }
                 },
@@ -742,7 +777,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     updateMessageByClientMessageId(clientMessageId) { msg ->
                         msg.copy(
                             mediaStatus = MediaStatus.FAILED,
-                            text = "[Gửi ảnh thất bại]"
+                            text = failedText
                         )
                     }
                     _messagesError.value = error.message

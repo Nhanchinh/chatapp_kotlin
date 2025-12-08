@@ -40,7 +40,8 @@ class ChatRepository(private val context: Context) {
     }
 
     companion object {
-        private const val MAX_MEDIA_SIZE_BYTES = 5 * 1024 * 1024 // 5MB
+        private const val MAX_MEDIA_SIZE_BYTES = 5 * 1024 * 1024 // 5MB for images and files
+        private const val MAX_VIDEO_SIZE_BYTES = 100 * 1024 * 1024 // 100MB for videos
     }
 
     suspend fun getConversations(limit: Int = 20, cursor: String? = null): Result<ConversationsResponse> {
@@ -157,13 +158,23 @@ class ChatRepository(private val context: Context) {
 
             val bytes = readBytesFromUri(mediaUri)
             if (bytes.isEmpty()) {
-                return Result.failure(Exception("Không đọc được dữ liệu hình ảnh"))
-            }
-            if (bytes.size > MAX_MEDIA_SIZE_BYTES) {
-                return Result.failure(Exception("Ảnh vượt quá giới hạn 5MB"))
+                return Result.failure(Exception("Không đọc được dữ liệu file"))
             }
 
             val mimeType = context.contentResolver.getType(mediaUri) ?: "application/octet-stream"
+            
+            // Check size limit based on media type
+            val maxSize = if (mimeType.startsWith("video/")) {
+                MAX_VIDEO_SIZE_BYTES
+            } else {
+                MAX_MEDIA_SIZE_BYTES
+            }
+            
+            if (bytes.size > maxSize) {
+                val maxSizeMB = maxSize / (1024.0 * 1024.0)
+                val fileSizeMB = bytes.size / (1024.0 * 1024.0)
+                return Result.failure(Exception("File vượt quá giới hạn ${maxSizeMB.toInt()}MB (kích thước: ${String.format("%.1f", fileSizeMB)}MB)"))
+            }
 
             // Check if E2EE is enabled in settings
             val e2eeEnabled = settingsManager.getE2EEEnabled()

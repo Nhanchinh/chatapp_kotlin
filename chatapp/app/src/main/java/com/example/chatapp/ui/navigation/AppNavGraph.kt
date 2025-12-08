@@ -98,13 +98,22 @@ fun AppNavGraph(
                     )
                 },
                 onMediaClick = { _, mediaId, convoId, mimeType ->
-                    navController.navigate(
-                        NavRoutes.MediaViewer.createRoute(
-                            convoId,
-                            mediaId,
-                            mimeType
+                    // Check if it's a file (not image/video)
+                    val isFile = mimeType != null && 
+                        !mimeType.startsWith("image/") && 
+                        !mimeType.startsWith("video/")
+                    
+                    if (!isFile) {
+                        // For images/videos: open viewer
+                        navController.navigate(
+                            NavRoutes.MediaViewer.createRoute(
+                                convoId ?: "",
+                                mediaId,
+                                mimeType
+                            )
                         )
-                    )
+                    }
+                    // For files: handled in ChatScreen with download button toggle
                 }
             )
         }

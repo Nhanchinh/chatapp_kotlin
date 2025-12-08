@@ -1,6 +1,7 @@
 package com.example.chatapp.ui.chat
 
 import android.net.Uri
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -39,6 +40,9 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.Reply
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -66,6 +70,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
@@ -94,6 +99,14 @@ import com.example.chatapp.data.model.MediaStatus
 import com.example.chatapp.data.model.Message
 import com.example.chatapp.ui.common.KeyboardDismissWrapper
 import com.example.chatapp.utils.rememberImagePickerLauncher
+import com.example.chatapp.utils.rememberVideoPickerLauncher
+import com.example.chatapp.utils.rememberFilePickerLauncher
+import com.example.chatapp.utils.getVideoThumbnail
+import com.example.chatapp.utils.formatDuration
+import androidx.compose.ui.graphics.asImageBitmap
+import android.graphics.Bitmap
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.example.chatapp.viewmodel.ChatViewModel
 import java.io.File
 import kotlinx.coroutines.delay
@@ -126,9 +139,20 @@ fun ChatScreen(
     var showMessageActions by remember { mutableStateOf<Message?>(null) }  // Show action menu for message
     var showMoreMenu by remember { mutableStateOf<Message?>(null) }  // Show "More" submenu
     var highlightedMessageId by remember { mutableStateOf<String?>(null) }  // Message ID being highlighted
+    var showMediaPickerMenu by remember { mutableStateOf(false) }  // Show media picker menu
+    var fileToDownload by remember { mutableStateOf<Message?>(null) }  // File message to show download button
     val scope = rememberCoroutineScope()
     val imagePickerLauncher = rememberImagePickerLauncher { uri ->
         uri?.let { chatViewModel.sendImage(it) }
+        showMediaPickerMenu = false
+    }
+    val videoPickerLauncher = rememberVideoPickerLauncher { uri ->
+        uri?.let { chatViewModel.sendVideo(it) }
+        showMediaPickerMenu = false
+    }
+    val filePickerLauncher = rememberFilePickerLauncher { uri ->
+        uri?.let { chatViewModel.sendFile(it) }
+        showMediaPickerMenu = false
     }
     
     // Nested scroll connection to detect pull-to-refresh
@@ -317,8 +341,19 @@ fun ChatScreen(
                             onMediaClick = {
                                 val mediaId = it.mediaId
                                 val convoId = it.conversationId
-                                if (mediaId != null && !convoId.isNullOrBlank()) {
-                                    onMediaClick(it.id, mediaId, convoId, it.mediaMimeType)
+                                val mimeType = it.mediaMimeType
+                                
+                                // Check if it's a file (not image/video)
+                                val isFile = mimeType != null && 
+                                    !mimeType.startsWith("image/") && 
+                                    !mimeType.startsWith("video/")
+                                
+                                if (isFile) {
+                                    // For files: toggle download button
+                                    fileToDownload = if (fileToDownload?.id == it.id) null else it
+                                } else if (mediaId != null && !convoId.isNullOrBlank()) {
+                                    // For images/videos: open viewer
+                                    onMediaClick(it.id, mediaId, convoId, mimeType)
                                 }
                             },
                             onLongPress = { msg ->
@@ -387,7 +422,7 @@ fun ChatScreen(
                     onLike = {
                         chatViewModel.sendMessage("👍")
                     },
-                    onAttach = { imagePickerLauncher.launch("image/*") },
+                    onAttach = { showMediaPickerMenu = true },
                     onFocusChange = { focused ->
                         isTextFieldFocused = focused
                     },
@@ -516,6 +551,148 @@ fun ChatScreen(
                     }
                     
                     Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+        }
+        
+        // Media picker menu (Image/Video/File)
+        if (showMediaPickerMenu) {
+            ModalBottomSheet(
+                onDismissRequest = { showMediaPickerMenu = false },
+                sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Image option
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                imagePickerLauncher.launch("image/*")
+                            }
+                            .padding(horizontal = 16.dp, vertical = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Image,
+                            contentDescription = null,
+                            tint = Color(0xFF2196F3),
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Text(
+                            text = "Chọn ảnh",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color.Black
+                        )
+                    }
+                    
+                    // Video option
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                videoPickerLauncher.launch("video/*")
+                            }
+                            .padding(horizontal = 16.dp, vertical = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info, // TODO: Replace with video icon if available
+                            contentDescription = null,
+                            tint = Color(0xFF2196F3),
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Text(
+                            text = "Chọn video",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color.Black
+                        )
+                    }
+                    
+                    // File option
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                filePickerLauncher.launch("*/*")
+                            }
+                            .padding(horizontal = 16.dp, vertical = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MoreHoriz, // TODO: Replace with file icon if available
+                            contentDescription = null,
+                            tint = Color(0xFF2196F3),
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Text(
+                            text = "Chọn file",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color.Black
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+        }
+        
+        // File download button (ModalBottomSheet like Delete button)
+        if (fileToDownload != null) {
+            val fileMsg = fileToDownload!!
+            val mimeType = fileMsg.mediaMimeType
+            val mediaId = fileMsg.mediaId
+            val convoId = fileMsg.conversationId
+            
+            if (mediaId != null && !convoId.isNullOrBlank()) {
+                ModalBottomSheet(
+                    onDismissRequest = { fileToDownload = null },
+                    sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // Download option
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    chatViewModel.downloadAndOpenFile(mediaId, convoId, mimeType)
+                                    fileToDownload = null  // Close bottom sheet after download
+                                }
+                                .padding(horizontal = 16.dp, vertical = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Download,
+                                contentDescription = null,
+                                tint = Color(0xFF2196F3),
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Text(
+                                text = "Tải file",
+                                color = Color(0xFF2196F3),
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
                 }
             }
         }
@@ -710,7 +887,14 @@ private fun MessageBubble(
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = if (repliedMessage.deleted) "Tin nhắn đã bị xóa" 
-                                  else if (repliedMessage.mediaId != null) "📷 Hình ảnh"
+                                  else if (repliedMessage.mediaId != null) {
+                                      val mimeType = repliedMessage.mediaMimeType ?: ""
+                                      when {
+                                          mimeType.startsWith("image/") -> "📷 Hình ảnh"
+                                          mimeType.startsWith("video/") -> "📹 Video"
+                                          else -> "📎 File"
+                                      }
+                                  }
                                   else repliedMessage.text,
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.Gray,
@@ -722,17 +906,19 @@ private fun MessageBubble(
                 Spacer(modifier = Modifier.height(2.dp))
             }
             
-            if (message.mediaId != null) {
+            if (message.mediaId != null && !isDeleted) {
                 MediaPreview(
                     message = message,
                     isFromMe = isFromMe,
                     onRetry = { onRetryMedia(message) },
-                    onClick = { onMediaClick?.invoke(message) }
+                    onClick = { onMediaClick?.invoke(message) },
+                    onLongPress = onLongPress?.let { { it(message) } }
                 )
                 Spacer(modifier = Modifier.height(4.dp))
             }
 
-            val shouldShowText = message.mediaId == null && message.text.isNotBlank()
+            // Show text if: message is deleted OR (no media and has text)
+            val shouldShowText = isDeleted || (message.mediaId == null && message.text.isNotBlank())
             if (shouldShowText) {
                 Box(
                     modifier = Modifier.widthIn(max = 280.dp)
@@ -954,7 +1140,14 @@ private fun ChatInputBar(
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = if (replyingToMessage.mediaId != null) "📷 Hình ảnh" else replyingToMessage.text,
+                        text = if (replyingToMessage.mediaId != null) {
+                            val mimeType = replyingToMessage.mediaMimeType ?: ""
+                            when {
+                                mimeType.startsWith("image/") -> "📷 Hình ảnh"
+                                mimeType.startsWith("video/") -> "📹 Video"
+                                else -> "📎 File"
+                            }
+                        } else replyingToMessage.text,
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.Gray,
                         maxLines = 1,
@@ -1032,7 +1225,8 @@ private fun MediaPreview(
     message: Message,
     isFromMe: Boolean,
     onRetry: () -> Unit,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onLongPress: (() -> Unit)? = null
 ) {
     val shape = RoundedCornerShape(16.dp)
     val backgroundColor = if (isFromMe) Color(0xFF1976D2) else Color(0xFFE0E0E0)
@@ -1042,22 +1236,178 @@ private fun MediaPreview(
 
     when (message.mediaStatus) {
         MediaStatus.READY -> {
+            val mimeType = message.mediaMimeType ?: ""
             val uri = message.mediaLocalPath?.let { resolveMediaUri(it) }
-            if (uri != null) {
-                AsyncImage(
-                    model = uri,
-                    contentDescription = "Hình ảnh",
-                    modifier = contentModifier.clickable { onClick() },
-                    contentScale = ContentScale.Crop
-                )
-            } else {
-                Box(
-                    modifier = contentModifier
-                        .background(backgroundColor)
-                        .padding(16.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(text = "Không tìm thấy ảnh", color = Color.White)
+            
+            when {
+                mimeType.startsWith("image/") -> {
+                    // Image preview
+                    if (uri != null) {
+                        AsyncImage(
+                            model = uri,
+                            contentDescription = "Hình ảnh",
+                            modifier = contentModifier.then(
+                                if (onLongPress != null) {
+                                    Modifier.combinedClickable(
+                                        onClick = { onClick() },
+                                        onLongClick = { onLongPress() }
+                                    )
+                                } else {
+                                    Modifier.clickable { onClick() }
+                                }
+                            ),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Box(
+                            modifier = contentModifier
+                                .background(backgroundColor)
+                                .padding(16.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(text = "Không tìm thấy ảnh", color = Color.White)
+                        }
+                    }
+                }
+                mimeType.startsWith("video/") -> {
+                    // Video preview with thumbnail, play button, and duration
+                    val context = LocalContext.current
+                    var videoThumbnail by remember { mutableStateOf<Bitmap?>(null) }
+                    var videoDuration by remember { mutableStateOf(0L) }
+                    
+                    LaunchedEffect(uri) {
+                        if (uri != null) {
+                            withContext(Dispatchers.IO) {
+                                val videoInfo = getVideoThumbnail(context, uri)
+                                videoThumbnail = videoInfo?.thumbnail
+                                videoDuration = videoInfo?.duration ?: 0L
+                            }
+                        }
+                    }
+                    
+                    Box(
+                        modifier = contentModifier.then(
+                            if (onLongPress != null) {
+                                Modifier.combinedClickable(
+                                    onClick = { onClick() },
+                                    onLongClick = { onLongPress() }
+                                )
+                            } else {
+                                Modifier.clickable { onClick() }
+                            }
+                        ).height(200.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        // Video thumbnail background
+                        if (videoThumbnail != null) {
+                            androidx.compose.foundation.Image(
+                                bitmap = videoThumbnail!!.asImageBitmap(),
+                                contentDescription = "Video thumbnail",
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clip(shape),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(backgroundColor),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(
+                                    color = Color.White,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        }
+                        
+                        // Play button overlay (centered)
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = "Play video",
+                            tint = Color.White,
+                            modifier = Modifier
+                                .size(64.dp)
+                                .background(
+                                    Color.Black.copy(alpha = 0.5f),
+                                    CircleShape
+                                )
+                                .padding(16.dp)
+                        )
+                        
+                        // Duration overlay (bottom right)
+                        if (videoDuration > 0) {
+                            Text(
+                                text = formatDuration(videoDuration),
+                                color = Color.White,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .background(
+                                        Color.Black.copy(alpha = 0.7f),
+                                        RoundedCornerShape(4.dp)
+                                    )
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+                else -> {
+                    // File preview - horizontal layout like image 2
+                    val fileName = message.mediaLocalPath?.substringAfterLast("/") ?: "File"
+                    val fileSizeKB = message.mediaSize?.let { it / 1024 } ?: 0L
+                    val fileSizeText = if (fileSizeKB >= 1024) {
+                        "%.1f MB".format(fileSizeKB / 1024.0)
+                    } else {
+                        "$fileSizeKB KB"
+                    }
+                    
+                    Row(
+                        modifier = contentModifier
+                            .background(backgroundColor)
+                            .then(
+                                if (onLongPress != null) {
+                                    Modifier.combinedClickable(
+                                        onClick = { onClick() },
+                                        onLongClick = { onLongPress() }
+                                    )
+                                } else {
+                                    Modifier.clickable { onClick() }
+                                }
+                            )
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // File icon
+                        Icon(
+                            imageVector = Icons.Default.Description,
+                            contentDescription = "File",
+                            tint = if (isFromMe) Color.White else Color(0xFF666666),
+                            modifier = Modifier.size(40.dp)
+                        )
+                        
+                        // File name and size
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = fileName,
+                                color = if (isFromMe) Color.White else Color.Black,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = fileSizeText,
+                                color = if (isFromMe) Color.White.copy(alpha = 0.8f) else Color(0xFF666666),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -1071,7 +1421,7 @@ private fun MediaPreview(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text(text = "Đang gửi ảnh...", color = Color.White, style = MaterialTheme.typography.bodySmall)
+                    Text(text = "Đang gửi...", color = Color.White, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -1086,7 +1436,7 @@ private fun MediaPreview(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text(text = "Đang tải ảnh...", color = Color.White, style = MaterialTheme.typography.bodySmall)
+                    Text(text = "Đang tải...", color = Color.White, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -1099,7 +1449,7 @@ private fun MediaPreview(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "Tải ảnh thất bại\nNhấn để thử lại",
+                    text = "Tải thất bại\nNhấn để thử lại",
                     color = Color.White,
                     style = MaterialTheme.typography.bodySmall,
                     textAlign = TextAlign.Center
