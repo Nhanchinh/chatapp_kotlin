@@ -197,7 +197,8 @@ class WebSocketClient {
         isEncrypted: Boolean = false,
         mediaId: String? = null,
         mediaMimeType: String? = null,
-        mediaSize: Long? = null
+        mediaSize: Long? = null,
+        replyTo: String? = null
     ): Result<Unit> {
         return suspendCancellableCoroutine { continuation ->
             val message = WebSocketMessage(
@@ -209,7 +210,8 @@ class WebSocketClient {
                 isEncrypted = isEncrypted,
                 mediaId = mediaId,
                 mediaMimeType = mediaMimeType,
-                mediaSize = mediaSize
+                mediaSize = mediaSize,
+                replyTo = replyTo
             )
 
             val messageAdapter = moshi.adapter(WebSocketMessage::class.java)

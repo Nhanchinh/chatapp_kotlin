@@ -17,7 +17,8 @@ data class Message(
     val mediaSize: Long? = null,
     val mediaLocalPath: String? = null,
     val mediaStatus: MediaStatus = MediaStatus.NONE,
-    val deleted: Boolean = false  // True if message is deleted/recalled
+    val deleted: Boolean = false,  // True if message is deleted/recalled
+    val replyTo: String? = null  // ID of message being replied to
 )
 
 enum class MediaStatus {

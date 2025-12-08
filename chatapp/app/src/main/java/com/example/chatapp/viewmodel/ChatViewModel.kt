@@ -528,7 +528,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                             mediaSize = dto.mediaSize,
                             mediaLocalPath = localMediaPath,
                             mediaStatus = mediaStatus,
-                            deleted = dto.deleted
+                            deleted = dto.deleted,
+                            replyTo = dto.replyTo
                         )
                     }
                     _messages.value = mappedMessages
@@ -593,7 +594,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun sendMessage(content: String) {
+    fun sendMessage(content: String, replyTo: String? = null) {
         val to = _currentContactId.value ?: return
         var conversationId = _currentConversationId.value
         viewModelScope.launch {
@@ -636,11 +637,12 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 senderId = me,
                 receiverId = to,
                 clientMessageId = clientMessageId,
-                conversationId = conversationId
+                conversationId = conversationId,
+                replyTo = replyTo
             )
             _messages.value = _messages.value + optimistic
 
-            repository.sendMessage(to, content, conversationId, clientMessageId).fold(
+            repository.sendMessage(to, content, conversationId, clientMessageId, replyTo = replyTo).fold(
                 onSuccess = {
                     // wait for ACK
                 },
@@ -969,7 +971,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     mediaMimeType = event.message.mediaMimeType,
                     mediaSize = event.message.mediaSize,
                     mediaStatus = mediaStatus,
-                    deleted = false  // WebSocket messages are new, so not deleted
+                    deleted = false,  // WebSocket messages are new, so not deleted
+                    replyTo = event.message.replyTo
                 )
 
                 // Update conversation ID if we don't have it yet

@@ -96,7 +96,8 @@ class ChatRepository(private val context: Context) {
         to: String, 
         content: String, 
         conversationId: String? = null,
-        clientMessageId: String? = null
+        clientMessageId: String? = null,
+        replyTo: String? = null
     ): Result<Unit> {
         return try {
             val userId = authManager.userId.first()
@@ -134,7 +135,7 @@ class ChatRepository(private val context: Context) {
                 }
             }
             
-            webSocketClient.sendMessage(userId, to, finalContent, clientMessageId, iv, isEncrypted)
+            webSocketClient.sendMessage(userId, to, finalContent, clientMessageId, iv, isEncrypted, replyTo = replyTo)
         } catch (e: Exception) {
             Result.failure(e)
         }

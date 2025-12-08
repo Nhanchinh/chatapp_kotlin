@@ -105,6 +105,9 @@ fun ChatScreen(
     var isInitialLoad by remember { mutableStateOf(true) }
     var isRefreshing by remember { mutableStateOf(false) }
     var messageToDelete by remember { mutableStateOf<Message?>(null) }  // Message to delete (for confirmation dialog)
+    var replyingToMessage by remember { mutableStateOf<Message?>(null) }  // Message being replied to
+    var showMessageActions by remember { mutableStateOf<Message?>(null) }  // Show action menu for message
+    var highlightedMessageId by remember { mutableStateOf<String?>(null) }  // Message ID being highlighted
     val scope = rememberCoroutineScope()
     val imagePickerLauncher = rememberImagePickerLauncher { uri ->
         uri?.let { chatViewModel.sendImage(it) }
@@ -222,7 +225,11 @@ fun ChatScreen(
                         state = listState,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .nestedScroll(nestedScrollConnection),
+                            .nestedScroll(nestedScrollConnection)
+                            .clickable { 
+                                // Click outside → dismiss highlight
+                                highlightedMessageId = null 
+                            },
                         contentPadding = PaddingValues(
                             start = 16.dp,
                             top = 12.dp,
@@ -297,11 +304,28 @@ fun ChatScreen(
                                 }
                             },
                             onLongPress = { msg ->
-                                // Only allow deleting own messages that are not already deleted
-                                if (msg.isFromMe && !msg.deleted) {
-                                    messageToDelete = msg  // Show confirmation dialog
+                                // Show action menu for own messages (not deleted) or any message to reply
+                                if (!msg.deleted) {
+                                    showMessageActions = msg
                                 }
-                            }
+                            },
+                            onReplyClick = { replyToMessageId ->
+                                // Scroll to the replied message and highlight it
+                                val index = messages.indexOfFirst { it.id == replyToMessageId }
+                                if (index != -1) {
+                                    scope.launch {
+                                        listState.animateScrollToItem(index)
+                                        // Highlight the message
+                                        highlightedMessageId = replyToMessageId
+                                        // Auto-clear highlight after 2 seconds
+                                        kotlinx.coroutines.delay(2000)
+                                        highlightedMessageId = null
+                                    }
+                                }
+                            },
+                            allMessages = messages,
+                            isHighlighted = message.id == highlightedMessageId,
+                            onDismissHighlight = { highlightedMessageId = null }
                         )
                     }
                     item {
@@ -332,8 +356,9 @@ fun ChatScreen(
                     onSend = {
                         val trimmed = messageText.trim()
                         if (trimmed.isNotEmpty()) {
-                            chatViewModel.sendMessage(trimmed)
+                            chatViewModel.sendMessage(trimmed, replyTo = replyingToMessage?.id)
                             messageText = ""
+                            replyingToMessage = null  // Clear reply after sending
                             if (hasSentTyping) {
                                 hasSentTyping = false
                                 chatViewModel.sendTyping(false)
@@ -348,9 +373,59 @@ fun ChatScreen(
                     onFocusChange = { focused ->
                         isTextFieldFocused = focused
                     },
+                    replyingToMessage = replyingToMessage,
+                    onClearReply = { replyingToMessage = null },
                     modifier = Modifier.imePadding()
                 )
             }
+        }
+        
+        // Message actions menu (Reply / Delete)
+        showMessageActions?.let { msg ->
+            AlertDialog(
+                onDismissRequest = { showMessageActions = null },
+                title = { Text("Tùy chọn") },
+                text = {
+                    Column {
+                        // Reply option (available for all messages)
+                        Button(
+                            onClick = {
+                                replyingToMessage = msg
+                                showMessageActions = null
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Trả lời")
+                        }
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        // Delete option (only for own messages)
+                        if (msg.isFromMe) {
+                            Button(
+                                onClick = {
+                                    showMessageActions = null
+                                    messageToDelete = msg
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                    containerColor = Color.Red
+                                )
+                            ) {
+                                Text("Xóa tin nhắn")
+                            }
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = {
+                    OutlinedButton(
+                        onClick = { showMessageActions = null }
+                    ) {
+                        Text("Đóng")
+                    }
+                }
+            )
         }
         
         // Delete message confirmation dialog
@@ -456,20 +531,47 @@ private fun MessageBubble(
     modifier: Modifier = Modifier,
     onRetryMedia: (Message) -> Unit,
     onMediaClick: ((Message) -> Unit)? = null,
-    onLongPress: ((Message) -> Unit)? = null
+    onLongPress: ((Message) -> Unit)? = null,
+    onReplyClick: ((String) -> Unit)? = null,
+    allMessages: List<Message> = emptyList(),  // To find replied message
+    isHighlighted: Boolean = false,
+    onDismissHighlight: () -> Unit = {}
 ) {
     val isFromMe = message.isFromMe
     val isDeleted = message.deleted
+    val repliedMessage = message.replyTo?.let { replyId ->
+        allMessages.find { it.id == replyId }
+    }
     
     Row(
         modifier = modifier
             .fillMaxWidth()
             .then(
-                if (isFromMe && !isDeleted && onLongPress != null) {
+                if (!isDeleted && onLongPress != null) {
                     Modifier.combinedClickable(
-                        onClick = { },
+                        onClick = { 
+                            // Click outside highlighted message → dismiss highlight
+                            if (isHighlighted) {
+                                onDismissHighlight()
+                            }
+                        },
                         onLongClick = { onLongPress(message) }
                     )
+                } else {
+                    Modifier.clickable {
+                        // Click outside highlighted message → dismiss highlight
+                        if (isHighlighted) {
+                            onDismissHighlight()
+                        }
+                    }
+                }
+            )
+            .then(
+                if (isHighlighted) {
+                    Modifier.background(
+                        color = Color(0xFFFFD700).copy(alpha = 0.2f),  // Light yellow highlight
+                        shape = RoundedCornerShape(8.dp)
+                    ).padding(4.dp)
                 } else {
                     Modifier
                 }
@@ -482,6 +584,52 @@ private fun MessageBubble(
         }
 
         Column(horizontalAlignment = if (isFromMe) Alignment.End else Alignment.Start) {
+            // Reply preview (if this message is replying to another)
+            if (repliedMessage != null) {
+                // Logic: Determine who is being replied to from current user's perspective
+                val replyToText = when {
+                    isFromMe && repliedMessage.isFromMe -> "chính mình"
+                    isFromMe && !repliedMessage.isFromMe -> repliedMessage.senderName ?: "người khác"
+                    !isFromMe && repliedMessage.isFromMe -> "bạn"
+                    else -> repliedMessage.senderName ?: "người khác"
+                }
+                
+                Box(
+                    modifier = Modifier
+                        .widthIn(max = 280.dp)
+                        .background(
+                            color = Color(0xFFE0E0E0).copy(alpha = 0.5f),
+                            shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)
+                        )
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                        .clickable {
+                            message.replyTo?.let { replyToId ->
+                                onReplyClick?.invoke(replyToId)
+                            }
+                        }
+                ) {
+                    Column {
+                        Text(
+                            text = "Trả lời $replyToText",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isFromMe) Color(0xFF1976D2) else Color(0xFF424242)
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = if (repliedMessage.deleted) "Tin nhắn đã bị xóa" 
+                                  else if (repliedMessage.mediaId != null) "📷 Hình ảnh"
+                                  else repliedMessage.text,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(2.dp))
+            }
+            
             if (message.mediaId != null) {
                 MediaPreview(
                     message = message,
@@ -505,7 +653,11 @@ private fun MessageBubble(
                             } else {
                                 Color(0xFFE5E5EA)
                             },
-                            shape = RoundedCornerShape(16.dp)
+                            shape = if (repliedMessage != null) {
+                                RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp, topStart = 4.dp, topEnd = 4.dp)
+                            } else {
+                                RoundedCornerShape(16.dp)
+                            }
                         )
                         .padding(horizontal = 12.dp, vertical = 8.dp)
                 ) {
@@ -560,15 +712,55 @@ private fun ChatInputBar(
     onLike: () -> Unit,
     onAttach: () -> Unit,
     modifier: Modifier = Modifier,
-    onFocusChange: (Boolean) -> Unit = {}
+    onFocusChange: (Boolean) -> Unit = {},
+    replyingToMessage: Message? = null,
+    onClearReply: () -> Unit = {}
 ) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
+    Column(modifier = modifier.fillMaxWidth()) {
+        // Reply preview bar (if replying to a message)
+        if (replyingToMessage != null) {
+            val replyToText = if (replyingToMessage.isFromMe) "chính mình" else (replyingToMessage.senderName ?: "người khác")
+            
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFFF5F5F5))
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Đang trả lời $replyToText",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF2196F3)
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = if (replyingToMessage.mediaId != null) "📷 Hình ảnh" else replyingToMessage.text,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                IconButton(onClick = onClearReply) {
+                    Icon(
+                        imageVector = Icons.Default.Chat,  // Use a close icon if available
+                        contentDescription = "Hủy trả lời",
+                        tint = Color.Gray
+                    )
+                }
+            }
+        }
+        
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
         IconButton(onClick = onAttach) {
             Icon(
                 imageVector = Icons.Default.Image,
@@ -613,6 +805,7 @@ private fun ChatInputBar(
                 contentDescription = if (text.isBlank()) "Like" else "Send",
                 tint = if (text.isBlank()) Color(0xFF2196F3) else Color(0xFF2196F3)
             )
+        }
         }
     }
 }

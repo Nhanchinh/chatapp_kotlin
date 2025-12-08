@@ -32,7 +32,8 @@ data class MessageDto(
     @Json(name = "media_id") val mediaId: String? = null,
     @Json(name = "media_mime_type") val mediaMimeType: String? = null,
     @Json(name = "media_size") val mediaSize: Long? = null,
-    val deleted: Boolean = false  // True if message is deleted/recalled
+    val deleted: Boolean = false,  // True if message is deleted/recalled
+    @Json(name = "reply_to") val replyTo: String? = null  // ID of message being replied to
 )
 
 data class MessagesResponse(
@@ -67,7 +68,8 @@ data class WebSocketMessage(
     @Json(name = "is_encrypted") val isEncrypted: Boolean = false,
     @Json(name = "media_id") val mediaId: String? = null,
     @Json(name = "media_mime_type") val mediaMimeType: String? = null,
-    @Json(name = "media_size") val mediaSize: Long? = null
+    @Json(name = "media_size") val mediaSize: Long? = null,
+    @Json(name = "reply_to") val replyTo: String? = null  // ID of message being replied to
 )
 
 data class MessageAck(
@@ -92,7 +94,8 @@ data class WebSocketMessageResponse(
     @Json(name = "is_encrypted") val isEncrypted: Boolean = false,
     @Json(name = "media_id") val mediaId: String? = null,
     @Json(name = "media_mime_type") val mediaMimeType: String? = null,
-    @Json(name = "media_size") val mediaSize: Long? = null
+    @Json(name = "media_size") val mediaSize: Long? = null,
+    @Json(name = "reply_to") val replyTo: String? = null  // ID of message being replied to
 )
 
 data class MediaUploadRequest(
