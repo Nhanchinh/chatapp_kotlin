@@ -32,6 +32,7 @@ data class MessageDto(
     @Json(name = "media_id") val mediaId: String? = null,
     @Json(name = "media_mime_type") val mediaMimeType: String? = null,
     @Json(name = "media_size") val mediaSize: Long? = null,
+    @Json(name = "media_duration") val mediaDuration: Double? = null,
     val deleted: Boolean = false,  // True if message is deleted/recalled
     @Json(name = "reply_to") val replyTo: String? = null,  // ID of message being replied to
     val reactions: Map<String, String>? = null  // {user_id: emoji} - Simple reactions
@@ -70,6 +71,7 @@ data class WebSocketMessage(
     @Json(name = "media_id") val mediaId: String? = null,
     @Json(name = "media_mime_type") val mediaMimeType: String? = null,
     @Json(name = "media_size") val mediaSize: Long? = null,
+    @Json(name = "media_duration") val mediaDuration: Double? = null,
     @Json(name = "reply_to") val replyTo: String? = null  // ID of message being replied to
 )
 
@@ -79,7 +81,8 @@ data class MessageAck(
     @Json(name = "client_message_id") val clientMessageId: String? = null,
     @Json(name = "media_id") val mediaId: String? = null,
     @Json(name = "media_mime_type") val mediaMimeType: String? = null,
-    @Json(name = "media_size") val mediaSize: Long? = null
+    @Json(name = "media_size") val mediaSize: Long? = null,
+    @Json(name = "media_duration") val mediaDuration: Double? = null
 )
 
 data class WebSocketAckResponse(
@@ -96,6 +99,7 @@ data class WebSocketMessageResponse(
     @Json(name = "media_id") val mediaId: String? = null,
     @Json(name = "media_mime_type") val mediaMimeType: String? = null,
     @Json(name = "media_size") val mediaSize: Long? = null,
+    @Json(name = "media_duration") val mediaDuration: Double? = null,
     @Json(name = "reply_to") val replyTo: String? = null  // ID of message being replied to
 )
 

@@ -502,8 +502,13 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     val mappedMessages = response.items.map { dto ->
                         // Decrypt message if encrypted
                         val isMediaMessage = dto.mediaId != null
+                        val isVoice = dto.mediaMimeType?.startsWith("audio/") == true
                         val baseText = if (isMediaMessage) {
-                            if (dto.senderId == me) "[Bạn đã gửi một ảnh]" else "[Đã gửi một ảnh]"
+                            if (dto.senderId == me) {
+                                if (isVoice) "[Bạn đã gửi một voice]" else "[Bạn đã gửi một ảnh]"
+                            } else {
+                                if (isVoice) "[Đã gửi một voice]" else "[Đã gửi một ảnh]"
+                            }
                         } else {
                             dto.content
                         }
@@ -551,6 +556,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                             mediaSize = dto.mediaSize,
                             mediaLocalPath = localMediaPath,
                             mediaStatus = mediaStatus,
+                            mediaDuration = dto.mediaDuration,
                             deleted = dto.deleted,
                             replyTo = dto.replyTo,
                             reactions = dto.reactions
@@ -710,7 +716,92 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         sendMedia(uri, "[Đang gửi file]", "[Đã gửi file]", "[Gửi file thất bại]")
     }
 
-    private fun sendMedia(uri: Uri, uploadingText: String, successText: String, failedText: String) {
+    fun sendVoice(uri: Uri, durationSec: Double) {
+        val to = _currentContactId.value ?: return
+        var conversationId = _currentConversationId.value
+        viewModelScope.launch {
+            val me = currentUserId.value ?: return@launch
+
+            if (conversationId == null) {
+                android.util.Log.d("ChatViewModel", "No conversation ID, creating new conversation (voice)...")
+                repository.createConversation(to).fold(
+                    onSuccess = { newConversationId ->
+                        conversationId = newConversationId
+                        _currentConversationId.value = newConversationId
+                        android.util.Log.d("ChatViewModel", "Created conversation: $newConversationId")
+                    },
+                    onFailure = { error ->
+                        android.util.Log.e("ChatViewModel", "Failed to create conversation: ${error.message}")
+                        _messagesError.value = "Failed to create conversation: ${error.message}"
+                        return@launch
+                    }
+                )
+            }
+
+            if (conversationId == null) {
+                android.util.Log.e("ChatViewModel", "Conversation ID is still null, cannot send voice")
+                return@launch
+            }
+
+            val clientMessageId = UUID.randomUUID().toString()
+            val friends = friendsMap.value
+            val myDisplayName = friends[me] ?: me
+            val optimistic = Message(
+                id = "temp_media_$clientMessageId",
+                text = "[Đang ghi âm...]",
+                timestamp = System.currentTimeMillis(),
+                isFromMe = true,
+                senderName = myDisplayName,
+                senderId = me,
+                receiverId = to,
+                clientMessageId = clientMessageId,
+                conversationId = conversationId,
+                mediaLocalPath = uri.toString(),
+                mediaStatus = MediaStatus.UPLOADING
+            )
+            _messages.value = _messages.value + optimistic
+
+            repository.sendVoiceMessage(
+                to = to,
+                conversationId = conversationId!!,
+                clientMessageId = clientMessageId,
+                mediaUri = uri,
+                mediaDurationSec = durationSec
+            ).fold(
+                onSuccess = { mediaResult ->
+                    updateMessageByClientMessageId(clientMessageId) { msg ->
+                        msg.copy(
+                            mediaId = mediaResult.mediaId,
+                            mediaMimeType = mediaResult.mimeType,
+                            mediaSize = mediaResult.size,
+                            mediaLocalPath = mediaResult.localPath,
+                            mediaStatus = MediaStatus.READY,
+                            text = "[Đã gửi voice]",
+                            mediaDuration = durationSec
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    updateMessageByClientMessageId(clientMessageId) { msg ->
+                        msg.copy(
+                            mediaStatus = MediaStatus.FAILED,
+                            text = "[Gửi voice thất bại]"
+                        )
+                    }
+                    _messagesError.value = error.message
+                }
+            )
+        }
+    }
+
+    private fun sendMedia(
+        uri: Uri,
+        uploadingText: String,
+        successText: String,
+        failedText: String,
+        mediaDurationSec: Double? = null,
+        contentPlaceholder: String = "[Media]"
+    ) {
         val to = _currentContactId.value ?: return
         var conversationId = _currentConversationId.value
         viewModelScope.launch {
@@ -759,7 +850,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 to = to,
                 conversationId = conversationId!!,
                 clientMessageId = clientMessageId,
-                mediaUri = uri
+                mediaUri = uri,
+                mediaDurationSec = mediaDurationSec,
+                contentPlaceholder = contentPlaceholder
             ).fold(
                 onSuccess = { mediaResult ->
                     updateMessageByClientMessageId(clientMessageId) { msg ->
@@ -937,6 +1030,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         mediaId = ack.mediaId,
                         mediaMimeType = ack.mediaMimeType,
                         mediaSize = ack.mediaSize,
+                        mediaDuration = ack.mediaDuration ?: updated.mediaDuration,
                         mediaStatus = if (updated.mediaStatus == MediaStatus.UPLOADING) MediaStatus.READY else updated.mediaStatus
                     )
                 }
@@ -984,7 +1078,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             // Decrypt message if encrypted
             viewModelScope.launch {
                 val isMediaMessage = event.message.mediaId != null
+                val isVoice = event.message.mediaMimeType?.startsWith("audio/") == true
                 val baseText = when {
+                    isMediaMessage && isVoice && isFromMe -> "[Bạn đã gửi một voice]"
+                    isMediaMessage && isVoice -> "[Đã nhận một voice]"
                     isMediaMessage && isFromMe -> "[Bạn đã gửi một ảnh]"
                     isMediaMessage -> "[Đã nhận một ảnh]"
                     else -> event.message.content
@@ -1036,6 +1133,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     mediaId = event.message.mediaId,
                     mediaMimeType = event.message.mediaMimeType,
                     mediaSize = event.message.mediaSize,
+                    mediaDuration = event.message.mediaDuration,
                     mediaStatus = mediaStatus,
                     deleted = false,  // WebSocket messages are new, so not deleted
                     replyTo = event.message.replyTo,

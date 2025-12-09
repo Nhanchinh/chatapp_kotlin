@@ -17,6 +17,7 @@ data class Message(
     val mediaSize: Long? = null,
     val mediaLocalPath: String? = null,
     val mediaStatus: MediaStatus = MediaStatus.NONE,
+    val mediaDuration: Double? = null,
     val deleted: Boolean = false,  // True if message is deleted/recalled
     val replyTo: String? = null,  // ID of message being replied to
     val reactions: Map<String, String>? = null  // {user_id: emoji} - Simple reactions

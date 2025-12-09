@@ -148,7 +148,10 @@ class ChatRepository(private val context: Context) {
         to: String,
         conversationId: String,
         clientMessageId: String,
-        mediaUri: Uri
+        mediaUri: Uri,
+        mediaDurationSec: Double? = null,
+        contentPlaceholder: String = "[Media]",
+        mimeTypeOverride: String? = null
     ): Result<MediaSendResult> {
         return try {
             val userId = authManager.userId.first()
@@ -161,7 +164,7 @@ class ChatRepository(private val context: Context) {
                 return Result.failure(Exception("Không đọc được dữ liệu file"))
             }
 
-            val mimeType = context.contentResolver.getType(mediaUri) ?: "application/octet-stream"
+            val mimeType = mimeTypeOverride ?: (context.contentResolver.getType(mediaUri) ?: "application/octet-stream")
             
             // Check size limit based on media type
             val maxSize = if (mimeType.startsWith("video/")) {
@@ -208,12 +211,13 @@ class ChatRepository(private val context: Context) {
             val sendResult = webSocketClient.sendMessage(
                 from = userId,
                 to = to,
-                content = "[Media]",
+                content = contentPlaceholder,
                 clientMessageId = clientMessageId,
                 isEncrypted = false,
                 mediaId = mediaId,
                 mediaMimeType = mimeType,
-                mediaSize = bytes.size.toLong()
+                mediaSize = bytes.size.toLong(),
+                mediaDuration = mediaDurationSec
             )
 
             if (sendResult.isFailure) {
@@ -231,6 +235,24 @@ class ChatRepository(private val context: Context) {
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    suspend fun sendVoiceMessage(
+        to: String,
+        conversationId: String,
+        clientMessageId: String,
+        mediaUri: Uri,
+        mediaDurationSec: Double
+    ): Result<MediaSendResult> {
+        return sendMediaMessage(
+            to = to,
+            conversationId = conversationId,
+            clientMessageId = clientMessageId,
+            mediaUri = mediaUri,
+            mediaDurationSec = mediaDurationSec,
+            contentPlaceholder = "[Voice]",
+            mimeTypeOverride = "audio/mp4"
+        )
     }
 
     suspend fun downloadMedia(

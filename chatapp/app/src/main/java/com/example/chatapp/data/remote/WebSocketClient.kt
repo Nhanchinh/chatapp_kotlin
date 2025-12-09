@@ -223,6 +223,7 @@ class WebSocketClient {
         mediaId: String? = null,
         mediaMimeType: String? = null,
         mediaSize: Long? = null,
+        mediaDuration: Double? = null,
         replyTo: String? = null
     ): Result<Unit> {
         return suspendCancellableCoroutine { continuation ->
@@ -236,6 +237,7 @@ class WebSocketClient {
                 mediaId = mediaId,
                 mediaMimeType = mediaMimeType,
                 mediaSize = mediaSize,
+                mediaDuration = mediaDuration,
                 replyTo = replyTo
             )
 

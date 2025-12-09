@@ -1,6 +1,5 @@
 package com.example.chatapp.ui.chat
 
-import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -32,11 +31,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Chat
-import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.ThumbUp
-import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.Reply
 import androidx.compose.material.icons.filled.Delete
@@ -92,9 +92,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Translate
-import androidx.compose.material.icons.filled.Reply
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.input.pointer.pointerInteropFilter
+import android.Manifest
+import android.net.Uri
+import android.media.MediaRecorder
+import android.os.SystemClock
+import android.view.MotionEvent
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import com.example.chatapp.data.model.MediaStatus
 import com.example.chatapp.data.model.Message
 import com.example.chatapp.ui.common.KeyboardDismissWrapper
@@ -105,6 +114,9 @@ import com.example.chatapp.utils.getVideoThumbnail
 import com.example.chatapp.utils.formatDuration
 import androidx.compose.ui.graphics.asImageBitmap
 import android.graphics.Bitmap
+import android.widget.Toast
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material3.ButtonDefaults
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.example.chatapp.viewmodel.ChatViewModel
@@ -141,6 +153,17 @@ fun ChatScreen(
     var highlightedMessageId by remember { mutableStateOf<String?>(null) }  // Message ID being highlighted
     var showMediaPickerMenu by remember { mutableStateOf(false) }  // Show media picker menu
     var fileToDownload by remember { mutableStateOf<Message?>(null) }  // File message to show download button
+    val context = LocalContext.current
+    var isRecording by remember { mutableStateOf(false) }
+    var recordStartMs by rememberSaveable { mutableStateOf(0L) }
+    var recordFilePath by remember { mutableStateOf<String?>(null) }
+    var pendingStartAfterPermission by remember { mutableStateOf(false) }
+    var recorder by remember { mutableStateOf<MediaRecorder?>(null) }
+    var voicePreviewPath by remember { mutableStateOf<String?>(null) }
+    var voicePreviewDuration by remember { mutableStateOf<Double?>(null) }
+    var showVoicePreview by remember { mutableStateOf(false) }
+    var isVoicePreviewPlaying by remember { mutableStateOf(false) }
+    var voicePreviewPlayer by remember { mutableStateOf<android.media.MediaPlayer?>(null) }
     val scope = rememberCoroutineScope()
     val imagePickerLauncher = rememberImagePickerLauncher { uri ->
         uri?.let { chatViewModel.sendImage(it) }
@@ -153,6 +176,96 @@ fun ChatScreen(
     val filePickerLauncher = rememberFilePickerLauncher { uri ->
         uri?.let { chatViewModel.sendFile(it) }
         showMediaPickerMenu = false
+    }
+    fun hasAudioPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+    }
+    fun stopRecorder() {
+        recorder?.let { rec ->
+            try {
+                rec.stop()
+            } catch (_: Exception) {
+            }
+            try {
+                rec.reset()
+            } catch (_: Exception) {
+            }
+            rec.release()
+        }
+        recorder = null
+    }
+    fun startRecording() {
+        if (isRecording) return
+        try {
+            val file = File(context.cacheDir, "voice_${System.currentTimeMillis()}.m4a")
+            val rec = MediaRecorder()
+            rec.setAudioSource(MediaRecorder.AudioSource.MIC)
+            rec.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            rec.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+            rec.setAudioEncodingBitRate(96000)
+            rec.setAudioSamplingRate(44100)
+            rec.setOutputFile(file.absolutePath)
+            rec.prepare()
+            rec.start()
+            recorder = rec
+            recordStartMs = SystemClock.elapsedRealtime()
+            recordFilePath = file.absolutePath
+            isRecording = true
+        } catch (e: Exception) {
+            stopRecorder()
+            recordFilePath?.let { File(it).delete() }
+            recordFilePath = null
+            isRecording = false
+            Toast.makeText(context, "Không thể ghi âm: ${e.message ?: ""}", Toast.LENGTH_SHORT).show()
+        }
+    }
+    fun finishRecording(send: Boolean) {
+        if (!isRecording) return
+        val durationMs = SystemClock.elapsedRealtime() - recordStartMs
+        stopRecorder()
+        isRecording = false
+        val path = recordFilePath
+        recordFilePath = null
+        if (path == null) return
+        if (!send) {
+            File(path).delete()
+            return
+        }
+        if (durationMs < 500) {
+            File(path).delete()
+            Toast.makeText(context, "Ghi âm quá ngắn", Toast.LENGTH_SHORT).show()
+            return
+        }
+        voicePreviewPath = path
+        voicePreviewDuration = durationMs / 1000.0
+        showVoicePreview = true
+    }
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            startRecording()
+        } else {
+            Toast.makeText(context, "Cần quyền micro để ghi âm", Toast.LENGTH_SHORT).show()
+        }
+        pendingStartAfterPermission = false
+    }
+    fun ensurePermissionAndStartRecording() {
+        if (hasAudioPermission()) {
+            startRecording()
+        } else {
+            pendingStartAfterPermission = true
+            audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            stopRecorder()
+            recordFilePath?.let { File(it).delete() }
+            voicePreviewPlayer?.release()
+            voicePreviewPlayer = null
+            voicePreviewPath?.let { File(it).delete() }
+        }
     }
     
     // Nested scroll connection to detect pull-to-refresh
@@ -423,6 +536,9 @@ fun ChatScreen(
                         chatViewModel.sendMessage("👍")
                     },
                     onAttach = { showMediaPickerMenu = true },
+                    onVoicePressStart = { ensurePermissionAndStartRecording() },
+                    onVoicePressEnd = { send -> finishRecording(send) },
+                    isRecording = isRecording,
                     onFocusChange = { focused ->
                         isTextFieldFocused = focused
                     },
@@ -643,6 +759,147 @@ fun ChatScreen(
                     }
                     
                     Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+        }
+        // Voice preview sheet
+        if (showVoicePreview && voicePreviewPath != null && voicePreviewDuration != null) {
+            val durationSec = voicePreviewDuration!!
+            ModalBottomSheet(
+                onDismissRequest = {
+                    showVoicePreview = false
+                    voicePreviewPlayer?.release()
+                    voicePreviewPlayer = null
+                    voicePreviewPath?.let { File(it).delete() }
+                    voicePreviewPath = null
+                    voicePreviewDuration = null
+                    isVoicePreviewPlaying = false
+                },
+                sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = "Xem trước ghi âm",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFFF2F2F2), RoundedCornerShape(12.dp))
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        IconButton(
+                            onClick = {
+                                val path = voicePreviewPath
+                                if (path == null) return@IconButton
+                                if (isVoicePreviewPlaying) {
+                                    voicePreviewPlayer?.pause()
+                                    isVoicePreviewPlaying = false
+                                } else {
+                                    try {
+                                        if (voicePreviewPlayer == null) {
+                                            voicePreviewPlayer = android.media.MediaPlayer().apply {
+                                                setDataSource(path)
+                                                prepare()
+                                                setOnCompletionListener {
+                                                    isVoicePreviewPlaying = false
+                                                    seekTo(0)
+                                                }
+                                            }
+                                        }
+                                        voicePreviewPlayer?.start()
+                                        isVoicePreviewPlaying = true
+                                    } catch (e: Exception) {
+                                        Toast.makeText(context, "Không phát được audio", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = if (isVoicePreviewPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = "Play/Pause",
+                                tint = Color(0xFF2196F3)
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Ghi âm",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = String.format("%.1f giây", durationSec),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.Gray
+                            )
+                        }
+                        Text(
+                            text = String.format("%.0f", durationSec),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color(0xFF2196F3)
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                voicePreviewPlayer?.release()
+                                voicePreviewPlayer = null
+                                voicePreviewPath?.let { File(it).delete() }
+                                voicePreviewPath = null
+                                voicePreviewDuration = null
+                                isVoicePreviewPlaying = false
+                                showVoicePreview = false
+                            },
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFE91E63))
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = null,
+                                tint = Color(0xFFE91E63)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Hủy")
+                        }
+                        Button(
+                            onClick = {
+                                val path = voicePreviewPath
+                                val dur = voicePreviewDuration
+                                if (path == null || dur == null) return@Button
+                                voicePreviewPlayer?.pause()
+                                voicePreviewPlayer?.release()
+                                voicePreviewPlayer = null
+                                isVoicePreviewPlaying = false
+                                scope.launch {
+                                    chatViewModel.sendVoice(Uri.fromFile(File(path)), dur)
+                                    voicePreviewPath = null
+                                    voicePreviewDuration = null
+                                    showVoicePreview = false
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D47A1))
+                        ) {
+                            Text("Gửi", color = Color.White)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = null,
+                                tint = Color.White
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -1114,6 +1371,9 @@ private fun ChatInputBar(
     onSend: () -> Unit,
     onLike: () -> Unit,
     onAttach: () -> Unit,
+    onVoicePressStart: () -> Unit,
+    onVoicePressEnd: (Boolean) -> Unit,
+    isRecording: Boolean,
     modifier: Modifier = Modifier,
     onFocusChange: (Boolean) -> Unit = {},
     replyingToMessage: Message? = null,
@@ -1176,6 +1436,35 @@ private fun ChatInputBar(
                 imageVector = Icons.Default.Image,
                 contentDescription = "Gửi ảnh",
                 tint = Color(0xFF2196F3)
+            )
+        }
+    Box(
+            modifier = Modifier
+                .size(40.dp)
+                .pointerInteropFilter { event ->
+                    when (event.action) {
+                        MotionEvent.ACTION_DOWN -> {
+                            onVoicePressStart()
+                            true
+                        }
+                        MotionEvent.ACTION_UP -> {
+                            onVoicePressEnd(true)
+                            true
+                        }
+                        MotionEvent.ACTION_CANCEL -> {
+                            onVoicePressEnd(false)
+                            true
+                        }
+                        else -> false
+                    }
+                }
+                .background(if (isRecording) Color(0x33FF5252) else Color.Transparent, shape = CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.Mic,
+                contentDescription = "Gửi voice",
+                tint = if (isRecording) Color(0xFFFF5252) else Color(0xFF2196F3)
             )
         }
 
@@ -1351,6 +1640,77 @@ private fun MediaPreview(
                                     .padding(horizontal = 6.dp, vertical = 2.dp)
                             )
                         }
+                    }
+                }
+                mimeType.startsWith("audio/") -> {
+                    val context = LocalContext.current
+                    var isPlaying by remember { mutableStateOf(false) }
+                    var player by remember { mutableStateOf<android.media.MediaPlayer?>(null) }
+                    DisposableEffect(message.id) {
+                        onDispose {
+                            player?.release()
+                            player = null
+                        }
+                    }
+                    Row(
+                        modifier = contentModifier
+                            .background(backgroundColor)
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        IconButton(
+                            onClick = {
+                                if (uri == null) return@IconButton
+                                if (isPlaying) {
+                                    player?.pause()
+                                    isPlaying = false
+                                } else {
+                                    try {
+                                        if (player == null) {
+                                            player = android.media.MediaPlayer().apply {
+                                                setDataSource(context, uri)
+                                                prepare()
+                                                setOnCompletionListener {
+                                                    isPlaying = false
+                                                    seekTo(0)
+                                                }
+                                            }
+                                        }
+                                        player?.start()
+                                        isPlaying = true
+                                    } catch (e: Exception) {
+                                        Toast.makeText(context, "Không phát được audio", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = "Play voice",
+                                tint = if (isFromMe) Color.White else Color(0xFF0D47A1)
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Voice",
+                                color = if (isFromMe) Color.White else Color.Black,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            message.mediaDuration?.let { dur ->
+                                Text(
+                                    text = String.format("%.1f giây", dur),
+                                    color = if (isFromMe) Color.White.copy(alpha = 0.8f) else Color.DarkGray,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
+                        Text(
+                            text = message.mediaDuration?.let { String.format("%.1f", it) } ?: "--",
+                            color = if (isFromMe) Color.White else Color.Black,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
                     }
                 }
                 else -> {
