@@ -47,6 +47,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -62,6 +64,21 @@ import com.example.chatapp.ui.common.KeyboardDismissWrapper
 import com.example.chatapp.ui.navigation.NavRoutes
 import com.example.chatapp.viewmodel.AuthViewModel
 import com.example.chatapp.viewmodel.ChatViewModel
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.rememberUpdatedState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -80,6 +97,10 @@ fun HomeScreen(
     val conversationsError by chatViewModel.conversationsError.collectAsStateWithLifecycle()
     val myUserId by chatViewModel.myUserId.collectAsStateWithLifecycle()
     val friendsList by chatViewModel.friendsList.collectAsStateWithLifecycle()
+    var showCreateGroupSheet by rememberSaveable { mutableStateOf(false) }
+    var groupName by rememberSaveable { mutableStateOf("") }
+    val selectedMembers = remember { mutableStateMapOf<String, Boolean>() }
+    var isCreatingGroup by remember { mutableStateOf(false) }
     
     var isRefreshing by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
@@ -194,29 +215,46 @@ fun HomeScreen(
                                         color = Color.White
                                     )
                                     Spacer(modifier = Modifier.height(12.dp))
-                                    OutlinedTextField(
-                                        value = query,
-                                        onValueChange = { query = it },
-                                        leadingIcon = { 
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        OutlinedTextField(
+                                            value = query,
+                                            onValueChange = { query = it },
+                                            leadingIcon = { 
+                                                Icon(
+                                                    Icons.Default.Search, 
+                                                    contentDescription = null,
+                                                    tint = Color(0xFF667EEA)
+                                                ) 
+                                            },
+                                            placeholder = { Text("Tìm kiếm") },
+                                            singleLine = true,
+                                            modifier = Modifier.weight(1f),
+                                            shape = RoundedCornerShape(24.dp),
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                unfocusedContainerColor = Color.White,
+                                                focusedContainerColor = Color.White,
+                                                unfocusedBorderColor = Color.Transparent,
+                                                focusedBorderColor = Color(0xFF667EEA)
+                                            ),
+                                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                            keyboardActions = KeyboardActions(onSearch = { /* noop */ })
+                                        )
+                                        IconButton(
+                                onClick = { showCreateGroupSheet = true },
+                                            modifier = Modifier
+                                                .size(48.dp)
+                                                .background(Color.White.copy(alpha = 0.15f), shape = RoundedCornerShape(14.dp))
+                                        ) {
                                             Icon(
-                                                Icons.Default.Search, 
-                                                contentDescription = null,
-                                                tint = Color(0xFF667EEA)
-                                            ) 
-                                        },
-                                        placeholder = { Text("Tìm kiếm") },
-                                        singleLine = true,
-                                        modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(24.dp),
-                                        colors = OutlinedTextFieldDefaults.colors(
-                                            unfocusedContainerColor = Color.White,
-                                            focusedContainerColor = Color.White,
-                                            unfocusedBorderColor = Color.Transparent,
-                                            focusedBorderColor = Color(0xFF667EEA)
-                                        ),
-                                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                                        keyboardActions = KeyboardActions(onSearch = { /* noop */ })
-                                    )
+                                                imageVector = Icons.Default.Add,
+                                                contentDescription = "Tạo nhóm",
+                                                tint = Color.White
+                                            )
+                                        }
+                                    }
                                 }
                             }
 
@@ -343,9 +381,10 @@ fun HomeScreen(
                                                 query = ""
                                                 navController?.navigate(
                                                     NavRoutes.Chat.createRoute(
-                                                        contactId = contactId,
-                                                        contactName = conversation.name,
-                                                        conversationId = conversation.id
+                                                contactId = contactId,
+                                                contactName = conversation.name,
+                                                conversationId = conversation.id,
+                                                isGroup = conversation.isGroup
                                                     )
                                                 )
                                             }
@@ -366,6 +405,147 @@ fun HomeScreen(
                 }
                 HomeTab.MENU -> {
                     MenuScreen(navController = navController, authViewModel = authViewModel, onLogout = onLogout)
+                }
+            }
+        }
+    }
+
+    if (showCreateGroupSheet) {
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = {
+                showCreateGroupSheet = false
+                groupName = ""
+                selectedMembers.clear()
+            },
+            sheetState = sheetState
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Nhóm mới",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                OutlinedTextField(
+                    value = groupName,
+                    onValueChange = { groupName = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("Đặt tên nhóm") },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedBorderColor = Color(0xFF667EEA),
+                        focusedBorderColor = Color(0xFF667EEA)
+                    )
+                )
+                Text(
+                    text = "Chọn thành viên",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                if (friendsList.isEmpty()) {
+                    Text(
+                        text = "Danh sách bạn bè trống",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray
+                    )
+                } else {
+                    friendsList.forEach { friend ->
+                        val friendId = friend.id ?: return@forEach
+                        val friendName = friend.fullName ?: friend.email ?: friendId
+                        val checked = selectedMembers[friendId] == true
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .toggleable(
+                                    value = checked,
+                                    onValueChange = { selected ->
+                                        selectedMembers[friendId] = selected
+                                    }
+                                )
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .background(Color(0xFF667EEA), shape = RoundedCornerShape(12.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = friendName.take(1).uppercase(),
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(friendName, fontWeight = FontWeight.Medium)
+                                friend.email?.let { email ->
+                                    Text(email, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                                }
+                            }
+                            if (checked) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = null,
+                                    tint = Color(0xFF1E88E5)
+                                )
+                            }
+                        }
+                        Divider()
+                    }
+                }
+                Button(
+                    onClick = {
+                        if (isCreatingGroup) return@Button
+                        val memberIds = selectedMembers.filterValues { it }.keys.toList()
+                        if (memberIds.isEmpty()) {
+                            isCreatingGroup = false
+                            return@Button
+                        }
+                        isCreatingGroup = true
+                        chatViewModel.createGroup(
+                            name = groupName,
+                            memberIds = memberIds,
+                            onSuccess = { convoId ->
+                                isCreatingGroup = false
+                                showCreateGroupSheet = false
+                                groupName = ""
+                                selectedMembers.clear()
+                                navController?.navigate(
+                                    NavRoutes.Chat.createRoute(
+                                        contactId = "group",
+                                        contactName = groupName.ifBlank { "Nhóm mới" },
+                                        conversationId = convoId,
+                                        isGroup = true
+                                    )
+                                )
+                            },
+                            onError = { _ ->
+                                isCreatingGroup = false
+                            }
+                        )
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D47A1))
+                ) {
+                    if (isCreatingGroup) {
+                        CircularProgressIndicator(
+                            color = Color.White,
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text("Tạo nhóm", color = Color.White)
+                    }
                 }
             }
         }

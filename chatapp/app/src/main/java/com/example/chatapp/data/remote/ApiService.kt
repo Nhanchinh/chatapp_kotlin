@@ -30,7 +30,11 @@ import com.example.chatapp.data.remote.model.StoreKeysResponse
 import com.example.chatapp.data.remote.model.GetKeyResponse
 import com.example.chatapp.data.remote.model.CreateConversationRequest
 import com.example.chatapp.data.remote.model.CreateConversationResponse
+import com.example.chatapp.data.remote.model.CreateGroupRequest
+import com.example.chatapp.data.remote.model.CreateGroupResponse
+import com.example.chatapp.data.remote.model.GroupInfoResponse
 import com.example.chatapp.data.remote.model.MediaDownloadResponse
+import com.example.chatapp.data.remote.model.AddMembersRequest
 import com.example.chatapp.data.remote.model.MediaUploadRequest
 import com.example.chatapp.data.remote.model.MediaUploadResponse
 import com.squareup.moshi.Json
@@ -258,6 +262,39 @@ interface ApiService {
         @Header("Authorization") token: String,
         @Path("conversation_id") conversationId: String
     ): SimpleMessageResponse
+
+    // Groups
+    @POST("conversations/groups")
+    suspend fun createGroup(
+        @Header("Authorization") token: String,
+        @Body body: CreateGroupRequest
+    ): CreateGroupResponse
+
+    @POST("conversations/groups/{conversation_id}/members")
+    suspend fun addGroupMembers(
+        @Header("Authorization") token: String,
+        @Path("conversation_id") conversationId: String,
+        @Body body: AddMembersRequest
+    ): GroupInfoResponse
+
+    @GET("conversations/groups/{conversation_id}")
+    suspend fun getGroupInfo(
+        @Header("Authorization") token: String,
+        @Path("conversation_id") conversationId: String
+    ): GroupInfoResponse
+
+    @DELETE("conversations/groups/{conversation_id}/members/{member_id}")
+    suspend fun removeGroupMember(
+        @Header("Authorization") token: String,
+        @Path("conversation_id") conversationId: String,
+        @Path("member_id") memberId: String
+    ): GroupInfoResponse
+
+    @POST("conversations/groups/{conversation_id}/leave")
+    suspend fun leaveGroup(
+        @Header("Authorization") token: String,
+        @Path("conversation_id") conversationId: String
+    ): GroupInfoResponse
 }
 
 

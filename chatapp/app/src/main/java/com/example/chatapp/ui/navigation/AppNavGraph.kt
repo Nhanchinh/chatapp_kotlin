@@ -13,6 +13,7 @@ import com.example.chatapp.ui.chat.MediaViewerScreen
 import com.example.chatapp.ui.home.FriendRequestScreen
 import com.example.chatapp.ui.home.FriendsListScreen
 import com.example.chatapp.ui.home.HomeScreen
+import com.example.chatapp.ui.group.GroupInfoScreen
 import com.example.chatapp.ui.login.LoginScreen
 import com.example.chatapp.ui.login.ForgotPasswordScreen
 import com.example.chatapp.ui.profile.UserProfileScreen
@@ -78,23 +79,31 @@ fun AppNavGraph(
             arguments = listOf(
                 navArgument("contactId") {},
                 navArgument("contactName") { defaultValue = "" },
-                navArgument("conversationId") { defaultValue = "" }
+                navArgument("conversationId") { defaultValue = "" },
+                navArgument("isGroup") { defaultValue = "0" }
             )
         ) { backStackEntry ->
             val contactId = backStackEntry.arguments?.getString("contactId") ?: return@composable
             val contactName = backStackEntry.arguments?.getString("contactName").orEmpty().ifBlank { null }
             val conversationId = backStackEntry.arguments?.getString("conversationId").orEmpty().ifBlank { null }
+            val isGroup = backStackEntry.arguments?.getString("isGroup") == "1"
 
             ChatScreen(
                 chatViewModel = chatViewModel,
                 contactId = contactId,
                 contactName = contactName,
                 conversationId = conversationId,
+                isGroup = isGroup,
                 onBack = { navController.popBackStack() },
                 onInfoClick = {
                     val safeName = contactName ?: contactId
                     navController.navigate(
                         NavRoutes.ContactInfo.createRoute(safeName, contactId, conversationId)
+                    )
+                },
+                onOpenGroupInfo = { convoId, groupName ->
+                    navController.navigate(
+                        NavRoutes.GroupInfo.createRoute(convoId, groupName)
                     )
                 },
                 onMediaClick = { _, mediaId, convoId, mimeType ->
@@ -115,6 +124,23 @@ fun AppNavGraph(
                     }
                     // For files: handled in ChatScreen with download button toggle
                 }
+            )
+        }
+        composable(
+            route = NavRoutes.GroupInfo.route,
+            arguments = listOf(
+                navArgument("conversationId") {},
+                navArgument("groupName") { defaultValue = "" }
+            )
+        ) { backStackEntry ->
+            val conversationId = backStackEntry.arguments?.getString("conversationId") ?: return@composable
+            val groupName = backStackEntry.arguments?.getString("groupName").orEmpty().ifBlank { null }
+            GroupInfoScreen(
+                conversationId = conversationId,
+                groupName = groupName,
+                chatViewModel = chatViewModel,
+                onBack = { navController.popBackStack() },
+                navController = navController
             )
         }
         composable(

@@ -423,6 +423,13 @@ class E2EEManager(context: Context) {
     }
     
     /**
+     * Get session key for a conversation from local storage (without fetching from server)
+     */
+    suspend fun getSessionKeyForConversation(conversationId: String): SecretKey? {
+        return keyManager.getSessionKey(conversationId)
+    }
+    
+    /**
      * Clear session key for a conversation (used when deleting conversation)
      */
     suspend fun clearSessionKeyForConversation(conversationId: String) {

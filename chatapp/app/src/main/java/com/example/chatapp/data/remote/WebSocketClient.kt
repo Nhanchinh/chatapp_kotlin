@@ -214,9 +214,9 @@ class WebSocketClient {
     }
 
     suspend fun sendMessage(
-        from: String, 
-        to: String, 
-        content: String, 
+        from: String,
+        to: String? = null,
+        content: String,
         clientMessageId: String? = null,
         iv: String? = null,
         isEncrypted: Boolean = false,
@@ -224,12 +224,15 @@ class WebSocketClient {
         mediaMimeType: String? = null,
         mediaSize: Long? = null,
         mediaDuration: Double? = null,
-        replyTo: String? = null
+        replyTo: String? = null,
+        conversationId: String? = null,
+        keyVersion: Int? = null
     ): Result<Unit> {
         return suspendCancellableCoroutine { continuation ->
             val message = WebSocketMessage(
                 from = from,
                 to = to,
+                conversationId = conversationId,
                 content = content,
                 clientMessageId = clientMessageId ?: UUID.randomUUID().toString(),
                 iv = iv,
@@ -238,6 +241,7 @@ class WebSocketClient {
                 mediaMimeType = mediaMimeType,
                 mediaSize = mediaSize,
                 mediaDuration = mediaDuration,
+                keyVersion = keyVersion,
                 replyTo = replyTo
             )
 

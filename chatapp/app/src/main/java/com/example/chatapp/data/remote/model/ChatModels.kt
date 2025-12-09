@@ -9,7 +9,11 @@ data class ConversationDto(
     @Json(name = "last_message_preview") val lastMessagePreview: String? = null,
     @Json(name = "last_message_sender_id") val lastMessageSenderId: String? = null,
     @Json(name = "unread_counters") val unreadCounters: Map<String, Int> = emptyMap(),
-    @Json(name = "is_online") val isOnline: Boolean? = null
+    @Json(name = "is_online") val isOnline: Boolean? = null,
+    @Json(name = "is_group") val isGroup: Boolean? = null,
+    val name: String? = null,
+    @Json(name = "group_key_version") val groupKeyVersion: Int? = null,
+    @Json(name = "owner_id") val ownerId: String? = null
 )
 
 data class ConversationsResponse(
@@ -33,6 +37,7 @@ data class MessageDto(
     @Json(name = "media_mime_type") val mediaMimeType: String? = null,
     @Json(name = "media_size") val mediaSize: Long? = null,
     @Json(name = "media_duration") val mediaDuration: Double? = null,
+    @Json(name = "key_version") val keyVersion: Int? = null,
     val deleted: Boolean = false,  // True if message is deleted/recalled
     @Json(name = "reply_to") val replyTo: String? = null,  // ID of message being replied to
     val reactions: Map<String, String>? = null  // {user_id: emoji} - Simple reactions
@@ -60,10 +65,10 @@ data class MarkReadResponse(
 data class WebSocketMessage(
     val from: String? = null,
     val to: String? = null,
+    @Json(name = "conversation_id") val conversationId: String? = null,
     val content: String? = null,
     val type: String? = null, // "typing_start", "typing_stop", "delivered", "seen"
     @Json(name = "message_id") val messageId: String? = null,
-    @Json(name = "conversation_id") val conversationId: String? = null,
     @Json(name = "client_message_id") val clientMessageId: String? = null,
     val ack: MessageAck? = null,
     val iv: String? = null,  // Initialization vector for AES-GCM
@@ -72,6 +77,7 @@ data class WebSocketMessage(
     @Json(name = "media_mime_type") val mediaMimeType: String? = null,
     @Json(name = "media_size") val mediaSize: Long? = null,
     @Json(name = "media_duration") val mediaDuration: Double? = null,
+    @Json(name = "key_version") val keyVersion: Int? = null,
     @Json(name = "reply_to") val replyTo: String? = null  // ID of message being replied to
 )
 
@@ -82,7 +88,8 @@ data class MessageAck(
     @Json(name = "media_id") val mediaId: String? = null,
     @Json(name = "media_mime_type") val mediaMimeType: String? = null,
     @Json(name = "media_size") val mediaSize: Long? = null,
-    @Json(name = "media_duration") val mediaDuration: Double? = null
+    @Json(name = "media_duration") val mediaDuration: Double? = null,
+    @Json(name = "key_version") val keyVersion: Int? = null
 )
 
 data class WebSocketAckResponse(
@@ -100,6 +107,8 @@ data class WebSocketMessageResponse(
     @Json(name = "media_mime_type") val mediaMimeType: String? = null,
     @Json(name = "media_size") val mediaSize: Long? = null,
     @Json(name = "media_duration") val mediaDuration: Double? = null,
+    @Json(name = "conversation_id") val conversationId: String? = null,
+    @Json(name = "key_version") val keyVersion: Int? = null,
     @Json(name = "reply_to") val replyTo: String? = null  // ID of message being replied to
 )
 
@@ -138,5 +147,39 @@ data class CreateConversationRequest(
 data class CreateConversationResponse(
     @Json(name = "conversation_id") val conversationId: String,
     val participants: List<String>
+)
+
+data class CreateGroupRequest(
+    val name: String,
+    @Json(name = "member_ids") val memberIds: List<String>,
+    val keys: List<EncryptedKeyDto>
+)
+
+data class CreateGroupResponse(
+    @Json(name = "conversation_id") val conversationId: String,
+    val participants: List<String>,
+    val name: String,
+    @Json(name = "group_key_version") val groupKeyVersion: Int,
+    @Json(name = "owner_id") val ownerId: String
+)
+
+data class MemberDto(
+    @Json(name = "user_id") val userId: String,
+    @Json(name = "full_name") val fullName: String? = null,
+    val email: String? = null,
+    @Json(name = "avatar_url") val avatarUrl: String? = null
+)
+
+data class GroupInfoResponse(
+    @Json(name = "conversation_id") val conversationId: String,
+    val name: String? = null,
+    val participants: List<MemberDto> = emptyList(),
+    @Json(name = "owner_id") val ownerId: String,
+    @Json(name = "group_key_version") val groupKeyVersion: Int
+)
+
+data class AddMembersRequest(
+    @Json(name = "member_ids") val memberIds: List<String>,
+    val keys: List<EncryptedKeyDto>
 )
 

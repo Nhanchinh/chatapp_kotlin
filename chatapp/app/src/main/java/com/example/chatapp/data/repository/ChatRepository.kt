@@ -5,6 +5,7 @@ import android.net.Uri
 import android.util.Log
 import android.webkit.MimeTypeMap
 import com.example.chatapp.data.encryption.AESEncryptedData
+import com.example.chatapp.data.encryption.CryptoManager
 import com.example.chatapp.data.encryption.E2EEManager
 import com.example.chatapp.data.local.AuthManager
 import com.example.chatapp.data.local.SettingsManager
@@ -15,8 +16,10 @@ import com.example.chatapp.data.remote.ReactResponse
 import com.example.chatapp.data.remote.WebSocketClient
 import com.example.chatapp.data.remote.WebSocketEvent
 import com.example.chatapp.data.remote.model.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -138,14 +141,114 @@ class ChatRepository(private val context: Context) {
                 }
             }
             
-            webSocketClient.sendMessage(userId, to, finalContent, clientMessageId, iv, isEncrypted, replyTo = replyTo)
+            webSocketClient.sendMessage(
+                from = userId,
+                to = to,
+                content = finalContent,
+                clientMessageId = clientMessageId,
+                iv = iv,
+                isEncrypted = isEncrypted,
+                replyTo = replyTo,
+                conversationId = conversationId
+            )
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun sendGroupMessage(
+        conversationId: String,
+        content: String,
+        clientMessageId: String? = null,
+        iv: String? = null,
+        isEncrypted: Boolean = false,
+        mediaId: String? = null,
+        mediaMimeType: String? = null,
+        mediaSize: Long? = null,
+        mediaDuration: Double? = null,
+        replyTo: String? = null,
+        keyVersion: Int? = null
+    ): Result<Unit> {
+        return try {
+            val userId = authManager.userId.first()
+                ?: return Result.failure(Exception("User ID not found"))
+            val token = authManager.getValidAccessToken()
+                ?: return Result.failure(Exception("Not authenticated"))
+
+            // Try to encrypt message if E2EE is enabled and we have group encryption setup
+            var finalContent = content
+            var finalIv: String? = iv
+            var finalIsEncrypted = isEncrypted
+            
+            // Check if E2EE is enabled in settings
+            val e2eeEnabled = settingsManager.getE2EEEnabled()
+            
+            if (e2eeEnabled && !isEncrypted && e2eeManager.isEncryptionAvailable(conversationId)) {
+                try {
+                    val encrypted = e2eeManager.encryptMessage(content, conversationId, token)
+                    if (encrypted != null) {
+                        finalContent = encrypted.ciphertext
+                        finalIv = encrypted.iv
+                        finalIsEncrypted = true
+                        Log.d(TAG, "Group message encrypted successfully (E2EE enabled)")
+                    } else {
+                        Log.w(TAG, "Group encryption failed, sending plaintext")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error encrypting group message, sending plaintext", e)
+                }
+            } else {
+                if (!e2eeEnabled) {
+                    Log.d(TAG, "E2EE is disabled in settings, sending plaintext group message")
+                } else {
+                    Log.d(TAG, "No encryption available for group, sending plaintext")
+                }
+            }
+
+            webSocketClient.sendMessage(
+                from = userId,
+                to = null,
+                content = finalContent,
+                clientMessageId = clientMessageId,
+                iv = finalIv,
+                isEncrypted = finalIsEncrypted,
+                mediaId = mediaId,
+                mediaMimeType = mediaMimeType,
+                mediaSize = mediaSize,
+                mediaDuration = mediaDuration,
+                replyTo = replyTo,
+                conversationId = conversationId,
+                keyVersion = keyVersion
+            )
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun createGroupWithE2EE(name: String, memberIds: List<String>): Result<CreateGroupResponse> {
+        return try {
+            val token = authManager.getValidAccessToken() ?: return Result.failure(Exception("Not authenticated"))
+            val me = authManager.userId.first() ?: return Result.failure(Exception("User ID not found"))
+            val allMembers = (memberIds + me).distinct()
+            val prepared = e2eeManager.prepareEncryptedKeys(allMembers, token)
+                ?: return Result.failure(Exception("Không thể chuẩn bị khóa nhóm"))
+            val (encryptedKeys, sessionKey) = prepared
+            val request = CreateGroupRequest(
+                name = name,
+                memberIds = memberIds,
+                keys = encryptedKeys.map { EncryptedKeyDto(userId = it.userId, encryptedSessionKey = it.encryptedSessionKey) }
+            )
+            val response = api.createGroup("Bearer $token", request)
+            // Lưu session key local
+            e2eeManager.storeSessionKeyForConversation(response.conversationId, sessionKey)
+            Result.success(response)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
     suspend fun sendMediaMessage(
-        to: String,
+        to: String?,
         conversationId: String,
         clientMessageId: String,
         mediaUri: Uri,
@@ -217,7 +320,8 @@ class ChatRepository(private val context: Context) {
                 mediaId = mediaId,
                 mediaMimeType = mimeType,
                 mediaSize = bytes.size.toLong(),
-                mediaDuration = mediaDurationSec
+                mediaDuration = mediaDurationSec,
+                conversationId = conversationId
             )
 
             if (sendResult.isFailure) {
@@ -238,7 +342,7 @@ class ChatRepository(private val context: Context) {
     }
 
     suspend fun sendVoiceMessage(
-        to: String,
+        to: String?,
         conversationId: String,
         clientMessageId: String,
         mediaUri: Uri,
@@ -565,6 +669,127 @@ class ChatRepository(private val context: Context) {
             Result.success(response.conversationId)
         } catch (e: Exception) {
             Log.e(TAG, "Error creating conversation", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun createGroupEncrypted(name: String, memberIds: List<String>): Result<String> {
+        return try {
+            val me = authManager.userId.first()
+                ?: return Result.failure(Exception("User ID not found"))
+            val token = authManager.getValidAccessToken()
+                ?: return Result.failure(Exception("Not authenticated"))
+            val participants = (memberIds + me).distinct()
+            val prepared = e2eeManager.prepareEncryptedKeys(participants, token)
+                ?: return Result.failure(Exception("Failed to prepare encrypted keys"))
+            val (encryptedKeys, sessionKey) = prepared
+            val keyDtos = encryptedKeys.map { key ->
+                EncryptedKeyDto(
+                    userId = key.userId,
+                    encryptedSessionKey = key.encryptedSessionKey
+                )
+            }
+            val response = api.createGroup(
+                "Bearer $token",
+                CreateGroupRequest(
+                    name = name,
+                    memberIds = participants,
+                    keys = keyDtos
+                )
+            )
+            e2eeManager.storeSessionKeyForConversation(response.conversationId, sessionKey)
+            Result.success(response.conversationId)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error creating group", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun addGroupMembers(conversationId: String, memberIds: List<String>): Result<GroupInfoResponse> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val token = authManager.getValidAccessToken() ?: return@withContext Result.failure(Exception("Not authenticated"))
+                
+                // Get EXISTING group key (don't create new key!)
+                val existingKey = e2eeManager.getSessionKeyForConversation(conversationId)
+                    ?: return@withContext Result.failure(Exception("Không tìm thấy khóa nhóm hiện tại"))
+                
+                // Fetch public keys for new members
+                val userIdsParam = memberIds.joinToString(",")
+                Log.d(TAG, "Fetching public keys for new members: $userIdsParam")
+                val publicKeysResponse = api.getPublicKeys("Bearer $token", userIdsParam)
+                
+                if (publicKeysResponse.items.isEmpty()) {
+                    return@withContext Result.failure(Exception("Không tìm thấy public key của thành viên"))
+                }
+                
+                Log.d(TAG, "Fetched ${publicKeysResponse.items.size} public keys from server")
+                
+                // Encrypt existing key for new members only
+                val keyDtos = mutableListOf<EncryptedKeyDto>()
+                for (keyDto in publicKeysResponse.items) {
+                    val publicKeyPem = keyDto.publicKey
+                    if (publicKeyPem == null) {
+                        Log.w(TAG, "No public key for user ${keyDto.userId}")
+                        continue
+                    }
+                    
+                    try {
+                        // Decode public key and encrypt existing group key
+                        val publicKey = CryptoManager.decodePublicKey(publicKeyPem)
+                        val sessionKeyBytes = existingKey.encoded
+                        val encryptedKey = CryptoManager.rsaEncrypt(sessionKeyBytes, publicKey)
+                        
+                        keyDtos.add(EncryptedKeyDto(userId = keyDto.userId, encryptedSessionKey = encryptedKey))
+                        Log.d(TAG, "✅ Encrypted existing group key for member ${keyDto.userId}")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Error encrypting key for member ${keyDto.userId}", e)
+                        return@withContext Result.failure(Exception("Không thể mã hóa khóa cho thành viên: ${e.message}"))
+                    }
+                }
+                
+                if (keyDtos.isEmpty()) {
+                    return@withContext Result.failure(Exception("Không thể mã hóa khóa cho bất kỳ thành viên nào"))
+                }
+                
+                val request = AddMembersRequest(memberIds = memberIds, keys = keyDtos)
+                val resp = api.addGroupMembers("Bearer $token", conversationId, request)
+                Log.d(TAG, "Successfully added ${memberIds.size} members to group")
+                // Don't change owner's key - it stays the same!
+                Result.success(resp)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error adding group members", e)
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun removeGroupMember(conversationId: String, memberId: String): Result<GroupInfoResponse> {
+        return try {
+            val token = authManager.getValidAccessToken() ?: return Result.failure(Exception("Not authenticated"))
+            val resp = api.removeGroupMember("Bearer $token", conversationId, memberId)
+            Result.success(resp)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun leaveGroup(conversationId: String): Result<GroupInfoResponse> {
+        return try {
+            val token = authManager.getValidAccessToken() ?: return Result.failure(Exception("Not authenticated"))
+            val resp = api.leaveGroup("Bearer $token", conversationId)
+            Result.success(resp)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getGroupInfo(conversationId: String): Result<GroupInfoResponse> {
+        return try {
+            val token = authManager.getValidAccessToken() ?: return Result.failure(Exception("Not authenticated"))
+            val resp = api.getGroupInfo("Bearer $token", conversationId)
+            Result.success(resp)
+        } catch (e: Exception) {
             Result.failure(e)
         }
     }

@@ -10,7 +10,10 @@ data class Conversation(
     val participants: List<String> = emptyList(),
     val lastMessageAt: String? = null,
     val lastMessagePreview: String? = null,
-    val lastMessageSenderId: String? = null
+    val lastMessageSenderId: String? = null,
+    val isGroup: Boolean = false,
+    val groupKeyVersion: Int? = null,
+    val ownerId: String? = null
 )
 
 

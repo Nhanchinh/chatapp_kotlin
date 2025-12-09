@@ -6,12 +6,13 @@ sealed class NavRoutes(val route: String) {
     data object Login : NavRoutes("login")
     data object ForgotPassword : NavRoutes("forgot-password")
     data object Home : NavRoutes("home")
-    data object Chat : NavRoutes("chat/{contactId}?contactName={contactName}&conversationId={conversationId}") {
-        fun createRoute(contactId: String, contactName: String?, conversationId: String?): String {
+    data object Chat : NavRoutes("chat/{contactId}?contactName={contactName}&conversationId={conversationId}&isGroup={isGroup}") {
+        fun createRoute(contactId: String, contactName: String?, conversationId: String?, isGroup: Boolean = false): String {
             val encodedName = Uri.encode(contactName ?: "")
             val encodedConversationId = Uri.encode(conversationId ?: "")
             val safeContactId = Uri.encode(contactId)
-            return "chat/$safeContactId?contactName=$encodedName&conversationId=$encodedConversationId"
+            val isGroupFlag = if (isGroup) "1" else "0"
+            return "chat/$safeContactId?contactName=$encodedName&conversationId=$encodedConversationId&isGroup=$isGroupFlag"
         }
     }
     data object ContactInfo : NavRoutes("contactinfo/{contactName}/{contactId}?conversationId={conversationId}") {
@@ -20,6 +21,13 @@ sealed class NavRoutes(val route: String) {
             val encodedId = Uri.encode(contactId ?: "unknown")
             val encodedConversationId = Uri.encode(conversationId ?: "")
             return "contactinfo/$encodedName/$encodedId?conversationId=$encodedConversationId"
+        }
+    }
+    data object GroupInfo : NavRoutes("groupinfo/{conversationId}?groupName={groupName}") {
+        fun createRoute(conversationId: String, groupName: String?): String {
+            val encodedName = Uri.encode(groupName ?: "")
+            val encodedConversationId = Uri.encode(conversationId)
+            return "groupinfo/$encodedConversationId?groupName=$encodedName"
         }
     }
     data object MediaGallery : NavRoutes("media-gallery/{conversationId}?contactName={contactName}") {

@@ -117,6 +117,7 @@ import android.graphics.Bitmap
 import android.widget.Toast
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material.icons.filled.Group
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.example.chatapp.viewmodel.ChatViewModel
@@ -131,9 +132,11 @@ fun ChatScreen(
     contactId: String,
     contactName: String?,
     conversationId: String?,
+    isGroup: Boolean = false,
     onBack: () -> Unit,
     onInfoClick: () -> Unit = {},
-    onMediaClick: (messageId: String, mediaId: String, conversationId: String, mimeType: String?) -> Unit = { _, _, _, _ -> }
+    onMediaClick: (messageId: String, mediaId: String, conversationId: String, mimeType: String?) -> Unit = { _, _, _, _ -> },
+    onOpenGroupInfo: (String, String?) -> Unit = { _, _ -> }
 ) {
     val messages by chatViewModel.messages.collectAsStateWithLifecycle()
     val isLoading by chatViewModel.messagesLoading.collectAsStateWithLifecycle()
@@ -295,8 +298,12 @@ fun ChatScreen(
         }
     }
 
-    LaunchedEffect(contactId, conversationId) {
-        chatViewModel.openConversation(conversationId, contactId, contactName)
+    LaunchedEffect(contactId, conversationId, isGroup) {
+        if (isGroup && conversationId != null) {
+            chatViewModel.openGroup(conversationId, contactName)
+        } else {
+            chatViewModel.openConversation(conversationId, contactId, contactName)
+        }
         lastMessageCount = 0
         isInitialLoad = true
     }
@@ -343,7 +350,9 @@ fun ChatScreen(
                 ChatTopBar(
                     title = chatViewModel.currentContactName.collectAsStateWithLifecycle().value ?: contactName ?: contactId,
                     onBack = onBack,
-                    onInfoClick = onInfoClick
+                    onInfoClick = onInfoClick,
+                    isGroup = isGroup,
+                    onOpenGroupInfo = if (isGroup && conversationId != null) ({ onOpenGroupInfo(conversationId, contactName) }) else null
                 )
             }
         ) { paddingValues ->
@@ -994,7 +1003,9 @@ fun ChatScreen(
 private fun ChatTopBar(
     title: String,
     onBack: () -> Unit,
-    onInfoClick: () -> Unit
+    onInfoClick: () -> Unit,
+    isGroup: Boolean = false,
+    onOpenGroupInfo: (() -> Unit)? = null
 ) {
     TopAppBar(
         title = {
@@ -1012,6 +1023,13 @@ private fun ChatTopBar(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+                    if (isGroup) {
+                        Text(
+                            text = "Nhóm",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.8f)
+                        )
+                    }
                 }
             }
         },
@@ -1021,8 +1039,14 @@ private fun ChatTopBar(
             }
         },
         actions = {
-            IconButton(onClick = onInfoClick) {
-                Icon(Icons.Default.Info, contentDescription = "Info", tint = Color.White)
+            if (isGroup && onOpenGroupInfo != null) {
+                IconButton(onClick = { onOpenGroupInfo() }) {
+                    Icon(Icons.Default.Group, contentDescription = "Group info", tint = Color.White)
+                }
+            } else {
+                IconButton(onClick = onInfoClick) {
+                    Icon(Icons.Default.Info, contentDescription = "Info", tint = Color.White)
+                }
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(

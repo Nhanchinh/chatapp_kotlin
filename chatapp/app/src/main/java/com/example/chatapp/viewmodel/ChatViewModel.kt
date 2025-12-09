@@ -13,6 +13,7 @@ import com.example.chatapp.data.repository.ChatRepository
 import com.example.chatapp.data.remote.WebSocketEvent
 import com.example.chatapp.data.remote.model.MessageAck
 import com.example.chatapp.data.remote.model.UserDto
+import com.example.chatapp.data.remote.model.GroupInfoResponse
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -59,12 +60,14 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _currentConversationId = MutableStateFlow<String?>(null)
     val currentConversationId: StateFlow<String?> = _currentConversationId.asStateFlow()
+    private val _currentConversationIsGroup = MutableStateFlow(false)
+    val currentConversationIsGroup: StateFlow<Boolean> = _currentConversationIsGroup.asStateFlow()
 
     private val _currentContactId = MutableStateFlow<String?>(null)
     val currentContactId: StateFlow<String?> = _currentContactId.asStateFlow()
-
     private val _currentContactName = MutableStateFlow<String?>(null)
     val currentContactName: StateFlow<String?> = _currentContactName.asStateFlow()
+
 
     private val _typingUsers = MutableStateFlow<Set<String>>(emptySet())
     val typingUsers: StateFlow<Set<String>> = _typingUsers.asStateFlow()
@@ -196,7 +199,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                                     
                                     Conversation(
                                         id = dto.id,
-                                        name = displayName,
+                                        name = dto.name ?: displayName,
                                         lastMessage = displayMessage,
                                         lastTime = formattedTime,
                                         unreadCount = dto.unreadCounters[me] ?: 0,
@@ -204,7 +207,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                                         participants = dto.participants,
                                         lastMessageAt = dto.lastMessageAt,
                                         lastMessagePreview = dto.lastMessagePreview,
-                                        lastMessageSenderId = dto.lastMessageSenderId
+                                        lastMessageSenderId = dto.lastMessageSenderId,
+                                        isGroup = dto.isGroup ?: false,
+                                        groupKeyVersion = dto.groupKeyVersion,
+                                        ownerId = dto.ownerId
                                     )
                                 } catch (e: Exception) {
                                     android.util.Log.e("ChatViewModel", "Error processing conversation ${dto.id}", e)
@@ -290,6 +296,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         _currentContactId.value = contactId
         _currentContactName.value = contactName ?: contactId
         _currentConversationId.value = conversationId
+        _currentConversationIsGroup.value = false
 
         if (conversationId != null) {
             // **CRITICAL**: Setup encryption BEFORE loading messages to avoid decrypt failures
@@ -325,6 +332,87 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         ensureWebSocketConnected(resumeSince)
+    }
+
+    fun openGroup(conversationId: String, groupName: String?) {
+        _currentConversationId.value = conversationId
+        _currentContactId.value = null
+        _currentContactName.value = groupName
+        _currentConversationIsGroup.value = true
+        viewModelScope.launch {
+            loadMessages(conversationId)
+            ensureWebSocketConnected()
+        }
+    }
+
+    fun createGroup(
+        name: String,
+        memberIds: List<String>,
+        onSuccess: (String) -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            repository.createGroupEncrypted(name.ifBlank { "Nhóm mới" }, memberIds).fold(
+                onSuccess = { convoId ->
+                    refreshConversations()
+                    onSuccess(convoId)
+                },
+                onFailure = { error ->
+                    _messagesError.value = error.message
+                    onError(error.message ?: "Tạo nhóm thất bại")
+                }
+            )
+        }
+    }
+
+    fun fetchGroupInfo(conversationId: String, onLoaded: (GroupInfoResponse) -> Unit = {}) {
+        viewModelScope.launch {
+            repository.getGroupInfo(conversationId).fold(
+                onSuccess = { resp -> onLoaded(resp) },
+                onFailure = { error -> _messagesError.value = error.message }
+            )
+        }
+    }
+
+    fun addGroupMembers(conversationId: String, memberIds: List<String>, onLoaded: (GroupInfoResponse) -> Unit = {}) {
+        viewModelScope.launch {
+            repository.addGroupMembers(conversationId, memberIds).fold(
+                onSuccess = { resp -> onLoaded(resp) },
+                onFailure = { error -> _messagesError.value = error.message }
+            )
+        }
+    }
+
+    fun addGroupMembers(
+        conversationId: String,
+        memberIds: List<String>,
+        onSuccess: (GroupInfoResponse) -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            repository.addGroupMembers(conversationId, memberIds).fold(
+                onSuccess = { resp -> onSuccess(resp) },
+                onFailure = { error -> onError(error.message ?: "Thêm thành viên thất bại") }
+            )
+        }
+    }
+
+    fun removeGroupMember(conversationId: String, memberId: String, onLoaded: (GroupInfoResponse) -> Unit = {}) {
+        viewModelScope.launch {
+            repository.removeGroupMember(conversationId, memberId).fold(
+                onSuccess = { resp -> onLoaded(resp) },
+                onFailure = { error -> _messagesError.value = error.message }
+            )
+        }
+    }
+
+    fun leaveGroup(conversationId: String, onLoaded: (GroupInfoResponse) -> Unit = {}) {
+        viewModelScope.launch {
+            repository.leaveGroup(conversationId).fold(
+                onSuccess = { resp -> onLoaded(resp) },
+                onFailure = { error -> _messagesError.value = error.message }
+            )
+        }
     }
 
     private fun findAndLoadExistingConversation(contactId: String) {
@@ -625,6 +713,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun sendMessage(content: String, replyTo: String? = null) {
+        if (_currentConversationIsGroup.value) {
+            sendGroupMessageInternal(content, replyTo)
+            return
+        }
         val to = _currentContactId.value ?: return
         var conversationId = _currentConversationId.value
         viewModelScope.launch {
@@ -648,14 +740,12 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             }
             
             // At this point, conversationId should be set and encryption keys should be ready
-            // (they were created during createConversation)
             if (conversationId == null) {
                 android.util.Log.e("ChatViewModel", "Conversation ID is still null, cannot send message")
                 return@launch
             }
             
             val clientMessageId = UUID.randomUUID().toString()
-            // Resolve my name from friends map (though it's usually not displayed for own messages)
             val friends = friendsMap.value
             val myDisplayName = friends[me] ?: me
             val optimistic = Message(
@@ -673,9 +763,42 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             _messages.value = _messages.value + optimistic
 
             repository.sendMessage(to, content, conversationId, clientMessageId, replyTo = replyTo).fold(
-                onSuccess = {
-                    // wait for ACK
-                },
+                onSuccess = { },
+                onFailure = { error ->
+                    _messages.value = _messages.value.filterNot { it.id == optimistic.id }
+                    _messagesError.value = error.message
+                }
+            )
+        }
+    }
+
+    private fun sendGroupMessageInternal(content: String, replyTo: String?) {
+        val conversationId = _currentConversationId.value ?: return
+        viewModelScope.launch {
+            val me = currentUserId.value ?: return@launch
+            val clientMessageId = UUID.randomUUID().toString()
+            val myDisplayName = friendsMap.value[me] ?: me
+            val optimistic = Message(
+                id = "temp_$clientMessageId",
+                text = content,
+                timestamp = System.currentTimeMillis(),
+                isFromMe = true,
+                senderName = myDisplayName,
+                senderId = me,
+                receiverId = null,
+                clientMessageId = clientMessageId,
+                conversationId = conversationId,
+                replyTo = replyTo
+            )
+            _messages.value = _messages.value + optimistic
+
+            repository.sendGroupMessage(
+                conversationId = conversationId,
+                content = content,
+                clientMessageId = clientMessageId,
+                replyTo = replyTo
+            ).fold(
+                onSuccess = { },
                 onFailure = { error ->
                     _messages.value = _messages.value.filterNot { it.id == optimistic.id }
                     _messagesError.value = error.message
@@ -717,6 +840,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun sendVoice(uri: Uri, durationSec: Double) {
+        if (_currentConversationIsGroup.value) {
+            sendGroupVoice(uri, durationSec)
+            return
+        }
         val to = _currentContactId.value ?: return
         var conversationId = _currentConversationId.value
         viewModelScope.launch {
@@ -764,6 +891,61 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             repository.sendVoiceMessage(
                 to = to,
                 conversationId = conversationId!!,
+                clientMessageId = clientMessageId,
+                mediaUri = uri,
+                mediaDurationSec = durationSec
+            ).fold(
+                onSuccess = { mediaResult ->
+                    updateMessageByClientMessageId(clientMessageId) { msg ->
+                        msg.copy(
+                            mediaId = mediaResult.mediaId,
+                            mediaMimeType = mediaResult.mimeType,
+                            mediaSize = mediaResult.size,
+                            mediaLocalPath = mediaResult.localPath,
+                            mediaStatus = MediaStatus.READY,
+                            text = "[Đã gửi voice]",
+                            mediaDuration = durationSec
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    updateMessageByClientMessageId(clientMessageId) { msg ->
+                        msg.copy(
+                            mediaStatus = MediaStatus.FAILED,
+                            text = "[Gửi voice thất bại]"
+                        )
+                    }
+                    _messagesError.value = error.message
+                }
+            )
+        }
+    }
+
+    private fun sendGroupVoice(uri: Uri, durationSec: Double) {
+        val conversationId = _currentConversationId.value ?: return
+        viewModelScope.launch {
+            val me = currentUserId.value ?: return@launch
+            val clientMessageId = UUID.randomUUID().toString()
+            val myDisplayName = friendsMap.value[me] ?: me
+            val optimistic = Message(
+                id = "temp_media_$clientMessageId",
+                text = "[Đang ghi âm...]",
+                timestamp = System.currentTimeMillis(),
+                isFromMe = true,
+                senderName = myDisplayName,
+                senderId = me,
+                receiverId = null,
+                clientMessageId = clientMessageId,
+                conversationId = conversationId,
+                mediaLocalPath = uri.toString(),
+                mediaStatus = MediaStatus.UPLOADING,
+                mediaDuration = durationSec
+            )
+            _messages.value = _messages.value + optimistic
+
+            repository.sendVoiceMessage(
+                to = null, // not used in group
+                conversationId = conversationId,
                 clientMessageId = clientMessageId,
                 mediaUri = uri,
                 mediaDurationSec = durationSec
