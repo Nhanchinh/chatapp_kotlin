@@ -316,7 +316,7 @@ interface ApiService {
     // Zego Token
     @POST("zego/token")
     suspend fun getZegoToken(
-        @Header("Authorization") token: String,
+        @Header("Authorization") authorization: String,
         @Body body: ZegoTokenRequest
     ): ZegoTokenResponse
 }

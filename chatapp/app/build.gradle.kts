@@ -22,7 +22,7 @@ android {
                 "\"")
         // Zego config - AppID/AppSign from Zego Dashboard
         buildConfigField("long", "ZEGO_APP_ID", "2014683924L")
-        buildConfigField("String", "ZEGO_APP_SIGN", "\"5ae7856f940c0af296b5112dcddc023258e6f92f33c4d7e33e833923431aec5a\"")
+        buildConfigField("String", "ZEGO_APP_SIGN", "\"\"")
     }
 
     buildTypes {
