@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.Chatapp" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- MaterialComponents inherits from AppCompat, so it works with both -->
+    <style name="Theme.Chatapp" parent="Theme.MaterialComponents.Light.NoActionBar" />
 </resources>

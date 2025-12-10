@@ -11,7 +11,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.chatapp"
-        minSdk = 24
+        minSdk = 26
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
@@ -20,6 +20,9 @@ android {
         // Base URL: backend on LAN IP (physical device on same network)
         buildConfigField("String", "BASE_URL", "\"http://192.168.30.105:8000/" +
                 "\"")
+        // Zego config - AppID/AppSign from Zego Dashboard
+        buildConfigField("long", "ZEGO_APP_ID", "2014683924L")
+        buildConfigField("String", "ZEGO_APP_SIGN", "\"5ae7856f940c0af296b5112dcddc023258e6f92f33c4d7e33e833923431aec5a\"")
     }
 
     buildTypes {
@@ -89,4 +92,12 @@ dependencies {
     implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
     implementation("com.google.firebase:firebase-messaging-ktx")
     implementation("com.google.firebase:firebase-analytics-ktx")
+
+    // AppCompat + Material
+    implementation("androidx.appcompat:appcompat:1.6.1")
+    implementation("com.google.android.material:material:1.11.0")
+    implementation("androidx.constraintlayout:constraintlayout:2.1.4")
+
+    // Zego UIKit Prebuilt Call
+    implementation("com.github.ZEGOCLOUD:zego_uikit_prebuilt_call_android:+")
 }

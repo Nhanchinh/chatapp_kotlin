@@ -99,6 +99,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.input.pointer.pointerInteropFilter
 import android.Manifest
 import android.net.Uri
+import android.content.Intent
 import android.media.MediaRecorder
 import android.os.SystemClock
 import android.view.MotionEvent
@@ -116,6 +117,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import android.graphics.Bitmap
 import android.widget.Toast
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material.icons.filled.Group
 import kotlinx.coroutines.Dispatchers
@@ -124,6 +126,10 @@ import com.example.chatapp.viewmodel.ChatViewModel
 import java.io.File
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.zegocloud.uikit.service.defines.ZegoUIKitUser
+import com.zegocloud.uikit.prebuilt.call.invite.ZegoUIKitPrebuiltCallInvitationService
+import androidx.activity.ComponentActivity
+import com.zegocloud.uikit.plugin.invitation.ZegoInvitationType
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -356,6 +362,32 @@ fun ChatScreen(
                     onBack = onBack,
                     onInfoClick = onInfoClick,
                     isGroup = isGroup,
+                    onCallClick = if (!isGroup) {
+                        {
+                            val myId = chatViewModel.getMyUserIdValue()
+                            val peerId = contactId
+                            if (myId.isNullOrBlank() || peerId.isBlank()) {
+                                Toast.makeText(context, "Không xác định được userId", Toast.LENGTH_SHORT).show()
+                                return@ChatTopBar
+                            }
+                            
+                            // Send video call invitation via Zego SDK
+                            try {
+                                val targetUser = ZegoUIKitUser(peerId, contactName ?: peerId)
+                                val invitees = java.util.ArrayList<ZegoUIKitUser>()
+                                invitees.add(targetUser)
+                                
+                                ZegoUIKitPrebuiltCallInvitationService.sendInvitationWithUIChange(
+                                    context as ComponentActivity,
+                                    invitees,
+                                    ZegoInvitationType.VIDEO_CALL,
+                                    null // callback listener (nullable)
+                                )
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Không thể gọi: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    } else null,
                     onOpenGroupInfo = if (isGroup && conversationId != null) ({ onOpenGroupInfo(conversationId, contactName) }) else null
                 )
             }
@@ -1009,6 +1041,7 @@ private fun ChatTopBar(
     onBack: () -> Unit,
     onInfoClick: () -> Unit,
     isGroup: Boolean = false,
+    onCallClick: (() -> Unit)? = null,
     onOpenGroupInfo: (() -> Unit)? = null
 ) {
     TopAppBar(
@@ -1043,6 +1076,11 @@ private fun ChatTopBar(
             }
         },
         actions = {
+            if (!isGroup && onCallClick != null) {
+                IconButton(onClick = onCallClick) {
+                    Icon(Icons.Default.Call, contentDescription = "Call", tint = Color.White)
+                }
+            }
             if (isGroup && onOpenGroupInfo != null) {
                 IconButton(onClick = { onOpenGroupInfo() }) {
                     Icon(Icons.Default.Group, contentDescription = "Group info", tint = Color.White)

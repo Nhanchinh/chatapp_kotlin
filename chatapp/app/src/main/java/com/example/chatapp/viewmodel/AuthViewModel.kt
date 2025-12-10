@@ -1,14 +1,13 @@
 package com.example.chatapp.viewmodel
 
 import android.app.Application
-import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.chatapp.data.encryption.KeyManager
 import com.example.chatapp.data.local.AuthManager
-import com.example.chatapp.data.remote.ApiClient
 import com.example.chatapp.data.repository.AuthRepository
 import com.example.chatapp.util.FCMManager
+import com.example.chatapp.data.remote.ApiClient
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -37,10 +36,8 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _authState = MutableStateFlow(AuthState())
     val authState: StateFlow<AuthState> = _authState.asStateFlow()
-    
-    companion object {
-        private const val TAG = "AuthViewModel"
-    }
+
+    fun getFCMManager(): FCMManager = fcmManager
 
     init {
         // Load saved state on initialization
@@ -76,18 +73,6 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             userHometown = user?.hometown,
             userBirthYear = user?.birthYear
         )
-        
-        // ✅ FIX: Register FCM token when restoring session
-        if (isLoggedIn && token != null) {
-            Log.d(TAG, "🔄 Restoring session, registering FCM token...")
-            try {
-                fcmManager.getFCMTokenAndSendToServer(token)
-                Log.d(TAG, "✅ FCM token registration initiated on app restart")
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Failed to register FCM token on restart", e)
-                e.printStackTrace()
-            }
-        }
     }
 
     fun login(
@@ -96,9 +81,6 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         refreshToken: String? = null,
         refreshExpiryTime: Long? = null
     ) {
-        Log.d(TAG, "🔐 Login function called")
-        Log.d(TAG, "   Access token: ${accessToken.take(20)}...")
-        
         viewModelScope.launch {
             _authState.value = _authState.value.copy(isLoading = true)
             authManager.saveAuthSession(
@@ -108,8 +90,6 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 refreshTokenExpiryTime = refreshExpiryTime
             )
             val profile = authManager.getUserProfileOnce()
-            Log.d(TAG, "👤 User profile loaded: ${profile?.email}")
-            
             _authState.value = AuthState(
                 isLoggedIn = true,
                 accessToken = accessToken,
@@ -124,42 +104,15 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 userHometown = profile?.hometown,
                 userBirthYear = profile?.birthYear
             )
-            
-            Log.d(TAG, "🔔 Starting FCM token registration process...")
-            
-            // Send FCM token to backend after successful login
-            try {
-                fcmManager.getFCMTokenAndSendToServer(accessToken)
-                Log.d(TAG, "✅ FCM token registration initiated")
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Failed to register FCM token", e)
-                e.printStackTrace()
-            }
         }
     }
 
     fun logout() {
         viewModelScope.launch {
-            // Deactivate FCM token before logout
-            try {
-                val token = authManager.getValidAccessToken()
-                if (token != null) {
-                    fcmManager.deactivateToken(token)
-                    Log.d(TAG, "✅ FCM token deactivated")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Failed to deactivate FCM token", e)
-            }
-            
             authManager.logout()
             _authState.value = AuthState(isLoggedIn = false, accessToken = null, isInitialized = true)
         }
     }
-    
-    /**
-     * Get FCM Manager instance for permission requests
-     */
-    fun getFCMManager() = fcmManager
 
     fun refreshToken() {
         viewModelScope.launch {
@@ -210,19 +163,6 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     userHometown = profile?.hometown ?: _authState.value.userHometown,
                     userBirthYear = profile?.birthYear ?: _authState.value.userBirthYear
                 )
-                
-                // ✅ FIX: Register FCM token after successful login
-                Log.d(TAG, "🔔 Starting FCM token registration process...")
-                try {
-                    token?.let {
-                        fcmManager.getFCMTokenAndSendToServer(it)
-                        Log.d(TAG, "✅ FCM token registration initiated")
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ Failed to register FCM token", e)
-                    e.printStackTrace()
-                }
-                
                 Result.success(Unit)
             } else {
                 _authState.value = _authState.value.copy(isLoading = false)

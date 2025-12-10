@@ -22,6 +22,13 @@ import com.example.chatapp.ui.navigation.AppNavGraph
 import com.example.chatapp.ui.theme.ChatappTheme
 import com.example.chatapp.util.FCMManager
 import com.example.chatapp.viewmodel.AuthViewModel
+import com.zegocloud.uikit.prebuilt.call.ZegoUIKitPrebuiltCallService
+import com.zegocloud.uikit.prebuilt.call.invite.ZegoUIKitPrebuiltCallInvitationConfig
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 
 class ChatappApplication : Application()
 
@@ -46,6 +53,27 @@ class MainActivity : ComponentActivity() {
                 val authState by authViewModel.authState.collectAsState()
                 
                 Surface(color = MaterialTheme.colorScheme.background) {
+                    // Init/Uninit Zego Call Invitation Service based on auth state
+                    LaunchedEffect(authState.isLoggedIn, authState.userId) {
+                        if (authState.isLoggedIn && !authState.userId.isNullOrBlank()) {
+                            // Init call invitation service
+                            val config = ZegoUIKitPrebuiltCallInvitationConfig()
+                            ZegoUIKitPrebuiltCallService.init(
+                                application,
+                                BuildConfig.ZEGO_APP_ID,
+                                BuildConfig.ZEGO_APP_SIGN,
+                                authState.userId,
+                                authState.userId, // use userId as userName for now
+                                config
+                            )
+                            Log.d(TAG, "Zego call service initialized for user: ${authState.userId}")
+                        } else {
+                            // Uninit when logged out
+                            ZegoUIKitPrebuiltCallService.unInit()
+                            Log.d(TAG, "Zego call service uninitialized")
+                        }
+                    }
+                    
                     if (authState.isInitialized) {
                         AppNavGraph(
                             navController = navController,

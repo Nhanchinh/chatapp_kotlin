@@ -101,6 +101,12 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     val myUserId: StateFlow<String?>
         get() = currentUserId
 
+    fun getMyUserIdValue(): String? = currentUserId.value
+
+    suspend fun getZegoCallToken(callId: String, expirySeconds: Int = 3600): Result<com.example.chatapp.data.remote.model.ZegoTokenResponse> {
+        return repository.getZegoToken(callId, expirySeconds)
+    }
+
     init {
         viewModelScope.launch {
             loadFriendsMap()

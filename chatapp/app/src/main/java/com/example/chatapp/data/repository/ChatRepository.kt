@@ -615,6 +615,24 @@ class ChatRepository(private val context: Context) {
             Result.failure(e)
         }
     }
+
+    suspend fun getZegoToken(roomId: String?, expirySeconds: Int = 3600): Result<com.example.chatapp.data.remote.model.ZegoTokenResponse> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val token = authManager.getValidAccessToken()
+                    ?: return@withContext Result.failure(Exception("Not authenticated"))
+                val body = com.example.chatapp.data.remote.model.ZegoTokenRequest(
+                    roomId = roomId,
+                    expirySeconds = expirySeconds
+                )
+                val resp = api.getZegoToken("Bearer $token", body)
+                Result.success(resp)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error fetching Zego token", e)
+                Result.failure(e)
+            }
+        }
+    }
     
     /**
      * Create a new conversation with encryption keys.

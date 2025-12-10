@@ -39,6 +39,8 @@ import com.example.chatapp.data.remote.model.MediaUploadRequest
 import com.example.chatapp.data.remote.model.MediaUploadResponse
 import com.example.chatapp.data.remote.model.FCMTokenRequest
 import com.example.chatapp.data.remote.model.FCMTokenResponse
+import com.example.chatapp.data.remote.model.ZegoTokenRequest
+import com.example.chatapp.data.remote.model.ZegoTokenResponse
 import com.squareup.moshi.Json
 import retrofit2.http.Body
 import retrofit2.http.DELETE
@@ -310,6 +312,13 @@ interface ApiService {
         @Header("Authorization") token: String,
         @Query("fcm_token") fcmToken: String
     ): FCMTokenResponse
+
+    // Zego Token
+    @POST("zego/token")
+    suspend fun getZegoToken(
+        @Header("Authorization") token: String,
+        @Body body: ZegoTokenRequest
+    ): ZegoTokenResponse
 }
 
 
