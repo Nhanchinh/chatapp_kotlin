@@ -79,6 +79,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.platform.LocalContext
+import com.example.chatapp.MainActivity
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,6 +90,7 @@ fun HomeScreen(
     chatViewModel: ChatViewModel,
     onLogout: () -> Unit
 ) {
+    val context = LocalContext.current
     var selectedTab by rememberSaveable { mutableStateOf(HomeTab.CHATS) }
     var query by rememberSaveable { mutableStateOf("") }
     var friendRequestsCount by remember { mutableStateOf(0) }
@@ -107,6 +110,14 @@ fun HomeScreen(
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
+        // Request notification permission on first launch
+        val fcmManager = authViewModel.getFCMManager()
+        if (!fcmManager.hasNotificationPermission()) {
+            (context as? MainActivity)?.let { activity ->
+                fcmManager.requestNotificationPermission(activity)
+            }
+        }
+        
         // Reset refreshing state when screen is first composed
         isRefreshing = false
         chatViewModel.refreshConversations()

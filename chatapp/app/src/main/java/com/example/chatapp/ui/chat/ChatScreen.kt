@@ -299,9 +299,13 @@ fun ChatScreen(
     }
 
     LaunchedEffect(contactId, conversationId, isGroup) {
+        android.util.Log.d("ChatScreen", "🔄 LaunchedEffect: contactId='$contactId', conversationId=$conversationId, isGroup=$isGroup, contactName=$contactName")
+        
         if (isGroup && conversationId != null) {
+            android.util.Log.d("ChatScreen", "📂 Opening GROUP chat: conversationId=$conversationId, groupName=$contactName")
             chatViewModel.openGroup(conversationId, contactName)
         } else {
+            android.util.Log.d("ChatScreen", "💬 Opening 1-1 chat: conversationId=$conversationId, contactId=$contactId, contactName=$contactName")
             chatViewModel.openConversation(conversationId, contactId, contactName)
         }
         lastMessageCount = 0
@@ -1044,8 +1048,8 @@ private fun ChatTopBar(
                     Icon(Icons.Default.Group, contentDescription = "Group info", tint = Color.White)
                 }
             } else {
-                IconButton(onClick = onInfoClick) {
-                    Icon(Icons.Default.Info, contentDescription = "Info", tint = Color.White)
+            IconButton(onClick = onInfoClick) {
+                Icon(Icons.Default.Info, contentDescription = "Info", tint = Color.White)
                 }
             }
         },

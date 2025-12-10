@@ -25,11 +25,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.chatapp.MainActivity
 import com.example.chatapp.viewmodel.AuthViewModel
 import com.example.chatapp.viewmodel.LoginViewModel
 import com.example.chatapp.ui.common.KeyboardDismissWrapper
@@ -42,9 +44,19 @@ fun LoginScreen(
 ) {
     val loginViewModel = remember { LoginViewModel(authViewModel) }
     val state by loginViewModel.uiState.collectAsState()
+    val context = LocalContext.current
 
     LaunchedEffect(state.isLoggedIn) {
-        if (state.isLoggedIn) onLoginSuccess()
+        if (state.isLoggedIn) {
+            // Request notification permission after successful login
+            val fcmManager = authViewModel.getFCMManager()
+            if (!fcmManager.hasNotificationPermission()) {
+                (context as? MainActivity)?.let { activity ->
+                    fcmManager.requestNotificationPermission(activity)
+                }
+            }
+            onLoginSuccess()
+        }
     }
 
     KeyboardDismissWrapper(modifier = Modifier.fillMaxSize()) {

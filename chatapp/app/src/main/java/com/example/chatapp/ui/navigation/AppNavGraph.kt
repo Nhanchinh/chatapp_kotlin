@@ -1,6 +1,7 @@
 package com.example.chatapp.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -27,9 +28,12 @@ import com.example.chatapp.viewmodel.ChatViewModel
 fun AppNavGraph(
     navController: NavHostController,
     authViewModel: AuthViewModel,
-    isLoggedIn: Boolean
+    isLoggedIn: Boolean,
+    notificationData: Map<String, String?>? = null
 ) {
     val chatViewModel: ChatViewModel = viewModel()
+
+    // Notification navigation disabled - just open app, user navigates manually
 
     NavHost(
         navController = navController,
@@ -83,10 +87,22 @@ fun AppNavGraph(
                 navArgument("isGroup") { defaultValue = "0" }
             )
         ) { backStackEntry ->
-            val contactId = backStackEntry.arguments?.getString("contactId") ?: return@composable
+            val contactIdArg = backStackEntry.arguments?.getString("contactId")
             val contactName = backStackEntry.arguments?.getString("contactName").orEmpty().ifBlank { null }
             val conversationId = backStackEntry.arguments?.getString("conversationId").orEmpty().ifBlank { null }
             val isGroup = backStackEntry.arguments?.getString("isGroup") == "1"
+            
+            // For group chat, contactId can be empty string (which is valid)
+            // For 1-1 chat, contactId is required
+            val contactId = if (isGroup) {
+                // Group chat: contactId can be empty, use empty string
+                contactIdArg ?: ""
+            } else {
+                // 1-1 chat: contactId is required
+                contactIdArg ?: return@composable
+            }
+            
+            android.util.Log.d("AppNavGraph", "📱 ChatScreen params: contactId='$contactId', conversationId=$conversationId, isGroup=$isGroup, contactName=$contactName")
 
             ChatScreen(
                 chatViewModel = chatViewModel,

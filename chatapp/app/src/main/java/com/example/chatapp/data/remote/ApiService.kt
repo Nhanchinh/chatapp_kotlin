@@ -37,6 +37,8 @@ import com.example.chatapp.data.remote.model.MediaDownloadResponse
 import com.example.chatapp.data.remote.model.AddMembersRequest
 import com.example.chatapp.data.remote.model.MediaUploadRequest
 import com.example.chatapp.data.remote.model.MediaUploadResponse
+import com.example.chatapp.data.remote.model.FCMTokenRequest
+import com.example.chatapp.data.remote.model.FCMTokenResponse
 import com.squareup.moshi.Json
 import retrofit2.http.Body
 import retrofit2.http.DELETE
@@ -295,6 +297,19 @@ interface ApiService {
         @Header("Authorization") token: String,
         @Path("conversation_id") conversationId: String
     ): GroupInfoResponse
+
+    // FCM Token endpoints
+    @POST("fcm/token")
+    suspend fun registerFCMToken(
+        @Header("Authorization") token: String,
+        @Body request: FCMTokenRequest
+    ): FCMTokenResponse
+
+    @DELETE("fcm/token")
+    suspend fun deactivateFCMToken(
+        @Header("Authorization") token: String,
+        @Query("fcm_token") fcmToken: String
+    ): FCMTokenResponse
 }
 
 

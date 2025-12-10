@@ -183,3 +183,15 @@ data class AddMembersRequest(
     val keys: List<EncryptedKeyDto>
 )
 
+// FCM Token models
+data class FCMTokenRequest(
+    @Json(name = "fcm_token") val fcmToken: String,
+    @Json(name = "device_id") val deviceId: String? = null,
+    @Json(name = "device_type") val deviceType: String = "android"
+)
+
+data class FCMTokenResponse(
+    val success: Boolean,
+    val message: String
+)
+

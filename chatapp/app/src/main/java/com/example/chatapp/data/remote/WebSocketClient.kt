@@ -214,9 +214,9 @@ class WebSocketClient {
     }
 
     suspend fun sendMessage(
-        from: String,
+        from: String, 
         to: String? = null,
-        content: String,
+        content: String, 
         clientMessageId: String? = null,
         iv: String? = null,
         isEncrypted: Boolean = false,

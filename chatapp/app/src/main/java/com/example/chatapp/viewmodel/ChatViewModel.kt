@@ -420,9 +420,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             val me = currentUserId.value ?: return@launch
             
             // First, try to find in already loaded conversations
+            // **CRITICAL**: Only find 1-1 conversations (not groups)
             var existingConversation = conversations.value.firstOrNull { conversation ->
                 val participants = conversation.participants.toSet()
-                participants.contains(me) && participants.contains(contactId)
+                participants.contains(me) && participants.contains(contactId) && !conversation.isGroup
             }
             
             if (existingConversation != null) {
@@ -443,23 +444,28 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         val displayName = otherParticipant?.let { friends[it] } ?: otherParticipant ?: "Unknown"
                         Conversation(
                             id = dto.id,
-                            name = displayName,
+                            name = dto.name ?: displayName,
                             lastMessage = dto.lastMessagePreview.orEmpty(),
                             lastTime = formatTimestamp(dto.lastMessageAt),
                             unreadCount = dto.unreadCounters[me] ?: 0,
                             isOnline = dto.isOnline ?: false,
                             participants = dto.participants,
                             lastMessageAt = dto.lastMessageAt,
-                            lastMessagePreview = dto.lastMessagePreview
+                            lastMessagePreview = dto.lastMessagePreview,
+                            lastMessageSenderId = dto.lastMessageSenderId,
+                            isGroup = dto.isGroup ?: false,  // **CRITICAL**: Include isGroup to filter groups
+                            groupKeyVersion = dto.groupKeyVersion,
+                            ownerId = dto.ownerId
                         )
                     }
                     _conversations.value = updatedConversations
                     _conversationsLoading.value = false
                     
                     // Try to find again after refresh
+                    // **CRITICAL**: Only find 1-1 conversations (not groups)
                     existingConversation = updatedConversations.firstOrNull { conversation ->
                         val participants = conversation.participants.toSet()
-                        participants.contains(me) && participants.contains(contactId)
+                        participants.contains(me) && participants.contains(contactId) && !conversation.isGroup
                     }
                     
                     if (existingConversation != null) {
