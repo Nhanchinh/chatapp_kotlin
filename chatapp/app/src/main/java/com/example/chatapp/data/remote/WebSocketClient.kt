@@ -226,7 +226,8 @@ class WebSocketClient {
         mediaDuration: Double? = null,
         replyTo: String? = null,
         conversationId: String? = null,
-        keyVersion: Int? = null
+        keyVersion: Int? = null,
+        messageType: String? = null
     ): Result<Unit> {
         return suspendCancellableCoroutine { continuation ->
             val message = WebSocketMessage(
@@ -242,7 +243,8 @@ class WebSocketClient {
                 mediaSize = mediaSize,
                 mediaDuration = mediaDuration,
                 keyVersion = keyVersion,
-                replyTo = replyTo
+                replyTo = replyTo,
+                messageType = messageType
             )
 
             val messageAdapter = moshi.adapter(WebSocketMessage::class.java)

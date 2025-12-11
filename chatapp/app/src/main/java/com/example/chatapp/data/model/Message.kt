@@ -20,7 +20,8 @@ data class Message(
     val mediaDuration: Double? = null,
     val deleted: Boolean = false,  // True if message is deleted/recalled
     val replyTo: String? = null,  // ID of message being replied to
-    val reactions: Map<String, String>? = null  // {user_id: emoji} - Simple reactions
+    val reactions: Map<String, String>? = null,  // {user_id: emoji} - Simple reactions
+    val messageType: String? = null  // text/image/call_log/missed_call/rejected_call...
 )
 
 enum class MediaStatus {

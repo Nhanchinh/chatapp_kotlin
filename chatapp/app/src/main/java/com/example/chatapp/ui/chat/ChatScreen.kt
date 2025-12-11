@@ -43,6 +43,12 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.PhoneMissed
+import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material3.Surface
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -117,7 +123,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import android.graphics.Bitmap
 import android.widget.Toast
 import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material.icons.filled.Group
 import kotlinx.coroutines.Dispatchers
@@ -129,6 +136,7 @@ import kotlinx.coroutines.launch
 import com.zegocloud.uikit.service.defines.ZegoUIKitUser
 import com.zegocloud.uikit.prebuilt.call.invite.ZegoUIKitPrebuiltCallInvitationService
 import androidx.activity.ComponentActivity
+import com.example.chatapp.MainActivity
 import com.zegocloud.uikit.plugin.invitation.ZegoInvitationType
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -148,6 +156,7 @@ fun ChatScreen(
     val isLoading by chatViewModel.messagesLoading.collectAsStateWithLifecycle()
     val typingUsers by chatViewModel.typingUsers.collectAsStateWithLifecycle()
     val errorMessage by chatViewModel.messagesError.collectAsStateWithLifecycle()
+    val conversations by chatViewModel.conversations.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
     var messageText by rememberSaveable { mutableStateOf("") }
     var hasSentTyping by remember { mutableStateOf(false) }
@@ -174,6 +183,10 @@ fun ChatScreen(
     var isVoicePreviewPlaying by remember { mutableStateOf(false) }
     var voicePreviewPlayer by remember { mutableStateOf<android.media.MediaPlayer?>(null) }
     val scope = rememberCoroutineScope()
+    val myId = chatViewModel.getMyUserIdValue()
+    val groupParticipantIds = remember(conversationId, conversations, isGroup) {
+        if (conversationId != null && isGroup) chatViewModel.getGroupParticipantIds(conversationId) else emptyList()
+    }
     val imagePickerLauncher = rememberImagePickerLauncher { uri ->
         uri?.let { chatViewModel.sendImage(it) }
         showMediaPickerMenu = false
@@ -370,6 +383,10 @@ fun ChatScreen(
                                 Toast.makeText(context, "Không xác định được userId", Toast.LENGTH_SHORT).show()
                                 return@ChatTopBar
                             }
+
+                            // Đánh dấu người gọi để chỉ gửi call log từ caller
+                            MainActivity.pendingCallLogTargetId = peerId
+                            MainActivity.pendingCallType = "video"
                             
                             // Send video call invitation via Zego SDK
                             try {
@@ -385,6 +402,87 @@ fun ChatScreen(
                                 )
                             } catch (e: Exception) {
                                 Toast.makeText(context, "Không thể gọi: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    } else null,
+                    onVoiceCallClick = if (!isGroup) {
+                        {
+                            val myId = chatViewModel.getMyUserIdValue()
+                            val peerId = contactId
+                            if (myId.isNullOrBlank() || peerId.isBlank()) {
+                                Toast.makeText(context, "Không xác định được userId", Toast.LENGTH_SHORT).show()
+                                return@ChatTopBar
+                            }
+
+                            // Đánh dấu caller để log call end
+                            MainActivity.pendingCallLogTargetId = peerId
+                            MainActivity.pendingCallType = "audio"
+
+                            try {
+                                val targetUser = ZegoUIKitUser(peerId, contactName ?: peerId)
+                                val invitees = java.util.ArrayList<ZegoUIKitUser>()
+                                invitees.add(targetUser)
+
+                                ZegoUIKitPrebuiltCallInvitationService.sendInvitationWithUIChange(
+                                    context as ComponentActivity,
+                                    invitees,
+                                    ZegoInvitationType.VOICE_CALL,
+                                    null
+                                )
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Không thể gọi thoại: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    } else null,
+                    onGroupVideoCallClick = if (isGroup && conversationId != null) {
+                        {
+                            val me = myId
+                            if (me.isNullOrBlank()) {
+                                Toast.makeText(context, "Không xác định được userId", Toast.LENGTH_SHORT).show()
+                                return@ChatTopBar
+                            }
+                            val invitees = groupParticipantIds.filter { it != me }.map { ZegoUIKitUser(it, it) }
+                            if (invitees.isEmpty()) {
+                                Toast.makeText(context, "Nhóm không có thành viên khác", Toast.LENGTH_SHORT).show()
+                                return@ChatTopBar
+                            }
+                            try {
+                                MainActivity.pendingGroupConversationId = conversationId
+                                MainActivity.pendingGroupCallType = "video"
+                                ZegoUIKitPrebuiltCallInvitationService.sendInvitationWithUIChange(
+                                    context as ComponentActivity,
+                                    java.util.ArrayList(invitees),
+                                    ZegoInvitationType.VIDEO_CALL,
+                                    null
+                                )
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Không thể gọi nhóm: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    } else null,
+                    onGroupVoiceCallClick = if (isGroup && conversationId != null) {
+                        {
+                            val me = myId
+                            if (me.isNullOrBlank()) {
+                                Toast.makeText(context, "Không xác định được userId", Toast.LENGTH_SHORT).show()
+                                return@ChatTopBar
+                            }
+                            val invitees = groupParticipantIds.filter { it != me }.map { ZegoUIKitUser(it, it) }
+                            if (invitees.isEmpty()) {
+                                Toast.makeText(context, "Nhóm không có thành viên khác", Toast.LENGTH_SHORT).show()
+                                return@ChatTopBar
+                            }
+                            try {
+                                MainActivity.pendingGroupConversationId = conversationId
+                                MainActivity.pendingGroupCallType = "audio"
+                                ZegoUIKitPrebuiltCallInvitationService.sendInvitationWithUIChange(
+                                    context as ComponentActivity,
+                                    java.util.ArrayList(invitees),
+                                    ZegoInvitationType.VOICE_CALL,
+                                    null
+                                )
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Không thể gọi nhóm: ${e.message}", Toast.LENGTH_SHORT).show()
                             }
                         }
                     } else null,
@@ -493,51 +591,87 @@ fun ChatScreen(
                     }
                     
                     items(messages) { message ->
-                        MessageBubble(
-                            message = message,
-                            onRetryMedia = { chatViewModel.retryDownloadMedia(it.id) },
-                            onMediaClick = {
-                                val mediaId = it.mediaId
-                                val convoId = it.conversationId
-                                val mimeType = it.mediaMimeType
-                                
-                                // Check if it's a file (not image/video)
-                                val isFile = mimeType != null && 
-                                    !mimeType.startsWith("image/") && 
-                                    !mimeType.startsWith("video/")
-                                
-                                if (isFile) {
-                                    // For files: toggle download button
-                                    fileToDownload = if (fileToDownload?.id == it.id) null else it
-                                } else if (mediaId != null && !convoId.isNullOrBlank()) {
-                                    // For images/videos: open viewer
-                                    onMediaClick(it.id, mediaId, convoId, mimeType)
-                                }
-                            },
-                            onLongPress = { msg ->
-                                // Show action menu for own messages (not deleted) or any message to reply
-                                if (!msg.deleted) {
-                                    showMessageActions = msg
-                                }
-                            },
-                            onReplyClick = { replyToMessageId ->
-                                // Scroll to the replied message and highlight it
-                                val index = messages.indexOfFirst { it.id == replyToMessageId }
-                                if (index != -1) {
-                                    scope.launch {
-                                        listState.animateScrollToItem(index)
-                                        // Highlight the message
-                                        highlightedMessageId = replyToMessageId
-                                        // Auto-clear highlight after 2 seconds
-                                        kotlinx.coroutines.delay(2000)
-                                        highlightedMessageId = null
+                        val msgType = message.messageType?.lowercase()
+                        val isCallLog = msgType?.startsWith("call_log") == true
+                        val isMissed = msgType == "missed_call" || msgType == "missed_call_video" || msgType == "missed_call_audio"
+                        val isRejected = msgType?.startsWith("rejected_call") == true
+                        if (isCallLog || isMissed || isRejected) {
+                            CallLogMessageItem(
+                                message = message,
+                                onCallAgain = {
+                                    if (isGroup) return@CallLogMessageItem
+                                    val myId = chatViewModel.getMyUserIdValue()
+                                    val peerId = contactId
+                                    if (myId.isNullOrBlank() || peerId.isBlank()) {
+                                        Toast.makeText(context, "Không xác định được userId", Toast.LENGTH_SHORT).show()
+                                        return@CallLogMessageItem
+                                    }
+                                    val isAudio = msgType?.contains("audio") == true || message.text.contains("thoại", ignoreCase = true)
+                                    val invitationType = if (isAudio) ZegoInvitationType.VOICE_CALL else ZegoInvitationType.VIDEO_CALL
+                                    try {
+                                        MainActivity.pendingCallLogTargetId = peerId
+                                        MainActivity.pendingCallType = if (invitationType == ZegoInvitationType.VOICE_CALL) "audio" else "video"
+                                        val targetUser = ZegoUIKitUser(peerId, contactName ?: peerId)
+                                        val invitees = java.util.ArrayList<ZegoUIKitUser>()
+                                        invitees.add(targetUser)
+                                        ZegoUIKitPrebuiltCallInvitationService.sendInvitationWithUIChange(
+                                            context as ComponentActivity,
+                                            invitees,
+                                            invitationType,
+                                            null
+                                        )
+                                    } catch (e: Exception) {
+                                        Toast.makeText(context, "Không thể gọi: ${e.message}", Toast.LENGTH_SHORT).show()
                                     }
                                 }
-                            },
-                            allMessages = messages,
-                            isHighlighted = message.id == highlightedMessageId,
-                            onDismissHighlight = { highlightedMessageId = null }
-                        )
+                            )
+                        } else {
+                            MessageBubble(
+                                message = message,
+                                onRetryMedia = { chatViewModel.retryDownloadMedia(it.id) },
+                                onMediaClick = {
+                                    val mediaId = it.mediaId
+                                    val convoId = it.conversationId
+                                    val mimeType = it.mediaMimeType
+                                    
+                                    // Check if it's a file (not image/video)
+                                    val isFile = mimeType != null && 
+                                        !mimeType.startsWith("image/") && 
+                                        !mimeType.startsWith("video/")
+                                    
+                                    if (isFile) {
+                                        // For files: toggle download button
+                                        fileToDownload = if (fileToDownload?.id == it.id) null else it
+                                    } else if (mediaId != null && !convoId.isNullOrBlank()) {
+                                        // For images/videos: open viewer
+                                        onMediaClick(it.id, mediaId, convoId, mimeType)
+                                    }
+                                },
+                                onLongPress = { msg ->
+                                    // Show action menu for own messages (not deleted) or any message to reply
+                                    if (!msg.deleted) {
+                                        showMessageActions = msg
+                                    }
+                                },
+                                onReplyClick = { replyToMessageId ->
+                                    // Scroll to the replied message and highlight it
+                                    val index = messages.indexOfFirst { it.id == replyToMessageId }
+                                    if (index != -1) {
+                                        scope.launch {
+                                            listState.animateScrollToItem(index)
+                                            // Highlight the message
+                                            highlightedMessageId = replyToMessageId
+                                            // Auto-clear highlight after 2 seconds
+                                            kotlinx.coroutines.delay(2000)
+                                            highlightedMessageId = null
+                                        }
+                                    }
+                                },
+                                allMessages = messages,
+                                isHighlighted = message.id == highlightedMessageId,
+                                onDismissHighlight = { highlightedMessageId = null }
+                            )
+                        }
                     }
                     item {
                         if (typingUsers.isNotEmpty()) {
@@ -1042,6 +1176,9 @@ private fun ChatTopBar(
     onInfoClick: () -> Unit,
     isGroup: Boolean = false,
     onCallClick: (() -> Unit)? = null,
+    onVoiceCallClick: (() -> Unit)? = null,
+    onGroupVideoCallClick: (() -> Unit)? = null,
+    onGroupVoiceCallClick: (() -> Unit)? = null,
     onOpenGroupInfo: (() -> Unit)? = null
 ) {
     TopAppBar(
@@ -1078,7 +1215,22 @@ private fun ChatTopBar(
         actions = {
             if (!isGroup && onCallClick != null) {
                 IconButton(onClick = onCallClick) {
-                    Icon(Icons.Default.Call, contentDescription = "Call", tint = Color.White)
+                    Icon(Icons.Default.Videocam, contentDescription = "Video Call", tint = Color.White)
+                }
+            }
+            if (!isGroup && onVoiceCallClick != null) {
+                IconButton(onClick = onVoiceCallClick) {
+                    Icon(Icons.Default.Phone, contentDescription = "Voice Call", tint = Color.White)
+                }
+            }
+            if (isGroup && onGroupVideoCallClick != null) {
+                IconButton(onClick = onGroupVideoCallClick) {
+                    Icon(Icons.Default.Videocam, contentDescription = "Group Video Call", tint = Color.White)
+                }
+            }
+            if (isGroup && onGroupVoiceCallClick != null) {
+                IconButton(onClick = onGroupVoiceCallClick) {
+                    Icon(Icons.Default.Phone, contentDescription = "Group Voice Call", tint = Color.White)
                 }
             }
             if (isGroup && onOpenGroupInfo != null) {
@@ -1428,6 +1580,86 @@ private fun TypingIndicator() {
         color = Color.Gray,
         modifier = Modifier.padding(start = 8.dp, top = 4.dp)
     )
+}
+
+@Composable
+private fun CallLogMessageItem(message: Message, onCallAgain: (() -> Unit)? = null) {
+    val icon = when (message.messageType?.lowercase()) {
+        "missed_call" -> Icons.Default.PhoneMissed
+        else -> Icons.Default.Videocam
+    }
+    val timeText = remember(message.timestamp) { formatTimeShort(message.timestamp) }
+
+    val isFromMe = message.isFromMe
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        horizontalArrangement = if (isFromMe) Arrangement.End else Arrangement.Start
+    ) {
+        Surface(
+            color = Color(0xFFF1F3F5),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier
+                .fillMaxWidth(0.8f)
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = Color.Gray,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Column {
+                        Text(
+                            text = message.text,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF424242)
+                        )
+                        Text(
+                            text = timeText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray
+                        )
+                    }
+                }
+                // Secondary action (visual only)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.White, RoundedCornerShape(10.dp))
+                        .clickable(enabled = onCallAgain != null) { onCallAgain?.invoke() }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Gọi lại",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color(0xFF1976D2),
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun formatTimeShort(timestamp: Long): String {
+    return try {
+        val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
+        sdf.format(Date(timestamp))
+    } catch (_: Exception) {
+        ""
+    }
 }
 
 @Composable

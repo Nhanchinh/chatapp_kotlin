@@ -103,6 +103,13 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     fun getMyUserIdValue(): String? = currentUserId.value
 
+    /**
+     * Lấy danh sách participant IDs của một conversation (dùng cho group call).
+     */
+    fun getGroupParticipantIds(conversationId: String): List<String> {
+        return conversations.value.firstOrNull { it.id == conversationId }?.participants.orEmpty()
+    }
+
     suspend fun getZegoCallToken(callId: String, expirySeconds: Int = 3600): Result<com.example.chatapp.data.remote.model.ZegoTokenResponse> {
         return repository.getZegoToken(callId, expirySeconds)
     }
@@ -176,7 +183,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                                     }
                                     
                                     val isLastMessageFromMe = dto.lastMessageSenderId == me
-                                    val lastMessageText = dto.lastMessagePreview.orEmpty()
+                                    // Một số backend trả về ciphertext ở last_message_preview, nhận diện và coi như encrypted để xử lý đẹp hơn
+                                    val rawPreview = dto.lastMessagePreview.orEmpty()
+                                    val lastMessageText = if (looksLikeCiphertext(rawPreview)) "[Encrypted Message]" else rawPreview
                                     
                                     // Try to decrypt preview if it's encrypted
                                     val decryptedPreview = if (lastMessageText == "[Encrypted Message]") {
@@ -659,7 +668,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                             mediaDuration = dto.mediaDuration,
                             deleted = dto.deleted,
                             replyTo = dto.replyTo,
-                            reactions = dto.reactions
+                            reactions = dto.reactions,
+                            messageType = dto.messageType
                         )
                     }
                     _messages.value = mappedMessages
@@ -775,6 +785,99 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             _messages.value = _messages.value + optimistic
 
             repository.sendMessage(to, content, conversationId, clientMessageId, replyTo = replyTo).fold(
+                onSuccess = { },
+                onFailure = { error ->
+                    _messages.value = _messages.value.filterNot { it.id == optimistic.id }
+                    _messagesError.value = error.message
+                }
+            )
+        }
+    }
+
+    /**
+     * Send a system/call log message (e.g., call ended/missed).
+     */
+    fun sendCallLogMessage(content: String, messageType: String, to: String? = _currentContactId.value) {
+        val target = to ?: return
+        var conversationId = _currentConversationId.value
+        viewModelScope.launch {
+            val me = currentUserId.value ?: return@launch
+
+            if (conversationId == null) {
+                repository.createConversation(target).fold(
+                    onSuccess = { newConversationId ->
+                        conversationId = newConversationId
+                        _currentConversationId.value = newConversationId
+                    },
+                    onFailure = { error ->
+                        _messagesError.value = "Failed to create conversation: ${error.message}"
+                        return@launch
+                    }
+                )
+            }
+
+            if (conversationId == null) return@launch
+
+            val clientMessageId = UUID.randomUUID().toString()
+            val friends = friendsMap.value
+            val myDisplayName = friends[me] ?: me
+            val optimistic = Message(
+                id = "temp_system_$clientMessageId",
+                text = content,
+                timestamp = System.currentTimeMillis(),
+                isFromMe = true,
+                senderName = myDisplayName,
+                senderId = me,
+                receiverId = target,
+                clientMessageId = clientMessageId,
+                conversationId = conversationId,
+                messageType = messageType
+            )
+            _messages.value = _messages.value + optimistic
+
+            repository.sendMessage(
+                to = target,
+                content = content,
+                conversationId = conversationId,
+                clientMessageId = clientMessageId,
+                messageType = messageType
+            ).fold(
+                onSuccess = { },
+                onFailure = { error ->
+                    _messages.value = _messages.value.filterNot { it.id == optimistic.id }
+                    _messagesError.value = error.message
+                }
+            )
+        }
+    }
+
+    /**
+     * Gửi call log cho nhóm (ví dụ kết thúc cuộc gọi nhóm).
+     */
+    fun sendGroupCallLogMessage(conversationId: String, content: String, messageType: String) {
+        viewModelScope.launch {
+            val me = currentUserId.value ?: return@launch
+            val clientMessageId = java.util.UUID.randomUUID().toString()
+            val optimistic = Message(
+                id = "temp_sys_$clientMessageId",
+                text = content,
+                timestamp = System.currentTimeMillis(),
+                isFromMe = true,
+                senderName = friendsMap.value[me] ?: me,
+                senderId = me,
+                receiverId = null,
+                clientMessageId = clientMessageId,
+                conversationId = conversationId,
+                messageType = messageType
+            )
+            _messages.value = _messages.value + optimistic
+
+            repository.sendGroupMessage(
+                conversationId = conversationId,
+                content = content,
+                clientMessageId = clientMessageId,
+                messageType = messageType
+            ).fold(
                 onSuccess = { },
                 onFailure = { error ->
                     _messages.value = _messages.value.filterNot { it.id == optimistic.id }
@@ -1046,7 +1149,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 clientMessageId = clientMessageId,
                 mediaUri = uri,
                 mediaDurationSec = mediaDurationSec,
-                contentPlaceholder = contentPlaceholder
+                contentPlaceholder = contentPlaceholder,
+                messageType = null
             ).fold(
                 onSuccess = { mediaResult ->
                     updateMessageByClientMessageId(clientMessageId) { msg ->
@@ -1331,7 +1435,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     mediaStatus = mediaStatus,
                     deleted = false,  // WebSocket messages are new, so not deleted
                     replyTo = event.message.replyTo,
-                    reactions = null  // Reactions will be updated via WebSocket events
+                    reactions = null,  // Reactions will be updated via WebSocket events
+                    messageType = event.message.messageType
                 )
 
                 // Update conversation ID if we don't have it yet
@@ -1387,8 +1492,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun parseTimestamp(value: String): Long {
         return try {
-            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()).parse(value)?.time
-                ?: System.currentTimeMillis()
+            val fmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault())
+            fmt.timeZone = java.util.TimeZone.getTimeZone("UTC")
+            fmt.parse(value)?.time ?: System.currentTimeMillis()
         } catch (_: Exception) {
             System.currentTimeMillis()
         }
@@ -1524,6 +1630,13 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             android.util.Log.e("ChatViewModel", "Error formatting timestamp: $value", e)
             ""
         }
+    }
+
+    private fun looksLikeCiphertext(value: String): Boolean {
+        // Heuristic: dài và chỉ gồm base64-like chars
+        val trimmed = value.trim()
+        if (trimmed.length < 20) return false
+        return trimmed.matches(Regex("^[A-Za-z0-9+/=_-]{20,}$"))
     }
 
     fun deleteMessage(messageId: String, onSuccess: () -> Unit, onError: (String) -> Unit) {

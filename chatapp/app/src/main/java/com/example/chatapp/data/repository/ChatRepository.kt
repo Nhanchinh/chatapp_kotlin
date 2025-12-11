@@ -103,7 +103,8 @@ class ChatRepository(private val context: Context) {
         content: String, 
         conversationId: String? = null,
         clientMessageId: String? = null,
-        replyTo: String? = null
+        replyTo: String? = null,
+        messageType: String? = null
     ): Result<Unit> {
         return try {
             val userId = authManager.userId.first()
@@ -149,7 +150,8 @@ class ChatRepository(private val context: Context) {
                 iv = iv,
                 isEncrypted = isEncrypted,
                 replyTo = replyTo,
-                conversationId = conversationId
+                conversationId = conversationId,
+                messageType = messageType
             )
         } catch (e: Exception) {
             Result.failure(e)
@@ -167,7 +169,8 @@ class ChatRepository(private val context: Context) {
         mediaSize: Long? = null,
         mediaDuration: Double? = null,
         replyTo: String? = null,
-        keyVersion: Int? = null
+        keyVersion: Int? = null,
+        messageType: String? = null
     ): Result<Unit> {
         return try {
             val userId = authManager.userId.first()
@@ -218,7 +221,8 @@ class ChatRepository(private val context: Context) {
                 mediaDuration = mediaDuration,
                 replyTo = replyTo,
                 conversationId = conversationId,
-                keyVersion = keyVersion
+                keyVersion = keyVersion,
+                messageType = messageType
             )
         } catch (e: Exception) {
             Result.failure(e)
@@ -254,7 +258,8 @@ class ChatRepository(private val context: Context) {
         mediaUri: Uri,
         mediaDurationSec: Double? = null,
         contentPlaceholder: String = "[Media]",
-        mimeTypeOverride: String? = null
+        mimeTypeOverride: String? = null,
+        messageType: String? = null
     ): Result<MediaSendResult> {
         return try {
             val userId = authManager.userId.first()
@@ -321,7 +326,8 @@ class ChatRepository(private val context: Context) {
                 mediaMimeType = mimeType,
                 mediaSize = bytes.size.toLong(),
                 mediaDuration = mediaDurationSec,
-                conversationId = conversationId
+                conversationId = conversationId,
+                messageType = messageType
             )
 
             if (sendResult.isFailure) {
@@ -355,7 +361,8 @@ class ChatRepository(private val context: Context) {
             mediaUri = mediaUri,
             mediaDurationSec = mediaDurationSec,
             contentPlaceholder = "[Voice]",
-            mimeTypeOverride = "audio/mp4"
+            mimeTypeOverride = "audio/mp4",
+            messageType = null
         )
     }
 
