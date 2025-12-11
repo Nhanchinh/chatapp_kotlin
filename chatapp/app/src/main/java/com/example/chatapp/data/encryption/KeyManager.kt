@@ -10,6 +10,9 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.io.File
+import java.io.IOException
+import java.security.GeneralSecurityException
 import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.KeyStore
@@ -38,17 +41,49 @@ class KeyManager(private val context: Context) {
     
     // EncryptedSharedPreferences for storing sensitive data
     private val encryptedPrefs: SharedPreferences by lazy {
+        createEncryptedPrefsSafely()
+    }
+
+    /**
+     * Safely create EncryptedSharedPreferences. If the stored XML cannot be decrypted
+     * (common after uninstall/reinstall with restored data), delete the file and recreate.
+     */
+    private fun createEncryptedPrefsSafely(): SharedPreferences {
+        val fileName = "e2ee_encrypted_prefs"
         val masterKey = MasterKey.Builder(context)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
             .build()
-        
+        return try {
+            createEncryptedPrefs(masterKey, fileName)
+        } catch (e: GeneralSecurityException) {
+            Log.e(TAG, "Failed to open encrypted prefs (security). Resetting file.", e)
+            deleteEncryptedPrefsFile(fileName)
+            createEncryptedPrefs(masterKey, fileName)
+        } catch (e: IOException) {
+            Log.e(TAG, "Failed to open encrypted prefs (IO). Resetting file.", e)
+            deleteEncryptedPrefsFile(fileName)
+            createEncryptedPrefs(masterKey, fileName)
+        }
+    }
+
+    private fun createEncryptedPrefs(masterKey: MasterKey, fileName: String): SharedPreferences =
         EncryptedSharedPreferences.create(
             context,
-            "e2ee_encrypted_prefs",
+            fileName,
             masterKey,
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
         )
+
+    private fun deleteEncryptedPrefsFile(fileName: String) {
+        try {
+            val prefsFile = File(context.filesDir.parent + "/shared_prefs/$fileName.xml")
+            if (prefsFile.exists()) {
+                prefsFile.delete()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to delete corrupted encrypted prefs file", e)
+        }
     }
     
     // In-memory cache of AES session keys (conversationId -> SecretKey) per user

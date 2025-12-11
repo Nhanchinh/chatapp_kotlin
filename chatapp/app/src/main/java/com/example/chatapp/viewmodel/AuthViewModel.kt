@@ -36,6 +36,7 @@
 //    private val authManager = AuthManager(application)
 //    private val repository = AuthRepository(application)
 //    private val keyManager = KeyManager(application)
+//    // Giữ nguyên logic FCM của bạn
 //    private val fcmManager = FCMManager(application, ApiClient.apiService)
 //
 //    private val _authState = MutableStateFlow(AuthState())
@@ -57,7 +58,6 @@
 //        val user = if (isLoggedIn) authManager.getUserProfileOnce() else null
 //
 //        // Set active user in KeyManager if user is logged in
-//        // This ensures keys are accessible when app restarts
 //        if (isLoggedIn && user?.id != null) {
 //            keyManager.setActiveUser(user.id)
 //        } else {
@@ -79,6 +79,25 @@
 //        )
 //    }
 //
+//    // --- HÀM MỚI: LẤY ZEGO TOKEN TỪ BACKEND ---
+//    suspend fun fetchZegoToken(roomId: String? = "", expirySeconds: Int = 3600): Result<ZegoTokenResponse> {
+//        return withContext(Dispatchers.IO) {
+//            val bearer = authManager.getValidAccessToken()
+//                ?: return@withContext Result.failure(Exception("Not authenticated"))
+//            try {
+//                // Sửa lại tham số cho khớp với ApiService (Authorization Header)
+//                val resp = ApiClient.apiService.getZegoToken(
+//                    authorization = "Bearer $bearer",
+//                    body = ZegoTokenRequest(roomId = roomId, expirySeconds = expirySeconds)
+//                )
+//                Result.success(resp)
+//            } catch (e: Exception) {
+//                Result.failure(e)
+//            }
+//        }
+//    }
+//    // ------------------------------------------
+//
 //    fun login(
 //        accessToken: String,
 //        expiryTime: Long? = null,
@@ -94,6 +113,10 @@
 //                refreshTokenExpiryTime = refreshExpiryTime
 //            )
 //            val profile = authManager.getUserProfileOnce()
+//
+//            // Cập nhật KeyManager
+//            profile?.id?.let { keyManager.setActiveUser(it) }
+//
 //            _authState.value = AuthState(
 //                isLoggedIn = true,
 //                accessToken = accessToken,
@@ -114,6 +137,7 @@
 //    fun logout() {
 //        viewModelScope.launch {
 //            authManager.logout()
+//            keyManager.setActiveUser(null) // Xóa session mã hóa
 //            _authState.value = AuthState(isLoggedIn = false, accessToken = null, isInitialized = true)
 //        }
 //    }
@@ -142,26 +166,6 @@
 //                logout()
 //            }
 //        }
-//
-//    /**
-//     * Fetch a Zego token from backend for the current user.
-//     * Returns failure if user is not logged in or network call fails.
-//     */
-//    suspend fun fetchZegoToken(roomId: String? = "", expirySeconds: Int = 3600): Result<ZegoTokenResponse> {
-//        return withContext(Dispatchers.IO) {
-//            val bearer = authManager.getValidAccessToken()
-//                ?: return@withContext Result.failure(Exception("Not authenticated"))
-//            try {
-//                val resp = ApiClient.apiService.getZegoToken(
-//                    authorization = "Bearer $bearer",
-//                    body = ZegoTokenRequest(roomId = roomId, expirySeconds = expirySeconds)
-//                )
-//                Result.success(resp)
-//            } catch (e: Exception) {
-//                Result.failure(e)
-//            }
-//        }
-//    }
 //    }
 //
 //    // Network-based auth
@@ -247,9 +251,6 @@
 //        return repository.changePassword(oldPassword, newPassword)
 //    }
 //}
-//
-
-
 
 package com.example.chatapp.viewmodel
 
@@ -332,24 +333,30 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
-    // --- HÀM MỚI: LẤY ZEGO TOKEN TỪ BACKEND ---
+    // --- HÀM MỚI: LẤY ZEGO TOKEN TỪ BACKEND (ĐÃ SỬA LỖI GỌI API) ---
     suspend fun fetchZegoToken(roomId: String? = "", expirySeconds: Int = 3600): Result<ZegoTokenResponse> {
         return withContext(Dispatchers.IO) {
             val bearer = authManager.getValidAccessToken()
                 ?: return@withContext Result.failure(Exception("Not authenticated"))
             try {
-                // Sửa lại tham số cho khớp với ApiService (Authorization Header)
+                // Sửa tham số truyền vào: 'authorization' thay vì 'token' để khớp với ApiService
                 val resp = ApiClient.apiService.getZegoToken(
                     authorization = "Bearer $bearer",
                     body = ZegoTokenRequest(roomId = roomId, expirySeconds = expirySeconds)
                 )
-                Result.success(resp)
+
+                // Validate cơ bản
+                if (resp.token.isNotBlank()) {
+                    Result.success(resp)
+                } else {
+                    Result.failure(Exception("Server returned empty token"))
+                }
             } catch (e: Exception) {
                 Result.failure(e)
             }
         }
     }
-    // ------------------------------------------
+    // -------------------------------------------------------------
 
     fun login(
         accessToken: String,
