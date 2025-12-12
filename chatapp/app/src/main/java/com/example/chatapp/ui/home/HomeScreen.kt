@@ -94,6 +94,7 @@ fun HomeScreen(
     var selectedTab by rememberSaveable { mutableStateOf(HomeTab.CHATS) }
     var query by rememberSaveable { mutableStateOf("") }
     var friendRequestsCount by remember { mutableStateOf(0) }
+    var unreadNotificationsCount by remember { mutableStateOf(0) }
 
     val conversations by chatViewModel.conversations.collectAsStateWithLifecycle()
     val conversationsLoading by chatViewModel.conversationsLoading.collectAsStateWithLifecycle()
@@ -136,7 +137,7 @@ fun HomeScreen(
                     scope.launch {
                         chatViewModel.refreshConversations()
                         chatViewModel.refreshFriendsList()
-                        // Also refresh friend requests count
+                        // Also refresh friend requests count and unread notifications count
                         try {
                             val context = navController?.context
                             if (context != null) {
@@ -145,10 +146,13 @@ fun HomeScreen(
                                 if (token != null) {
                                     val resp = com.example.chatapp.data.remote.ApiClient.apiService.getFriendRequests("Bearer $token")
                                     friendRequestsCount = resp.requests.size
+                                    val notifResp = com.example.chatapp.data.remote.ApiClient.apiService.getUnreadNotificationCount("Bearer $token")
+                                    unreadNotificationsCount = notifResp.count
                                 }
                             }
                         } catch (_: Exception) {
                             friendRequestsCount = 0
+                            unreadNotificationsCount = 0
                         }
                         // Wait a bit for loading to complete
                         delay(500)
@@ -192,8 +196,47 @@ fun HomeScreen(
         }
     }
 
+    // Load unread notifications count
+    LaunchedEffect(Unit) {
+        try {
+            val context = navController?.context ?: return@LaunchedEffect
+            val auth = com.example.chatapp.data.local.AuthManager(context)
+            val token = auth.getValidAccessToken()
+            if (token != null) {
+                val resp = com.example.chatapp.data.remote.ApiClient.apiService.getUnreadNotificationCount("Bearer $token")
+                unreadNotificationsCount = resp.count
+            }
+        } catch (_: Exception) {
+            unreadNotificationsCount = 0
+        }
+    }
+
+    // Refresh unread count when tab changes (especially when leaving notifications tab)
+    LaunchedEffect(selectedTab) {
+        if (selectedTab != HomeTab.NOTIFICATIONS) {
+            try {
+                val context = navController?.context ?: return@LaunchedEffect
+                val auth = com.example.chatapp.data.local.AuthManager(context)
+                val token = auth.getValidAccessToken()
+                if (token != null) {
+                    val resp = com.example.chatapp.data.remote.ApiClient.apiService.getUnreadNotificationCount("Bearer $token")
+                    unreadNotificationsCount = resp.count
+                }
+            } catch (_: Exception) {
+                unreadNotificationsCount = 0
+            }
+        }
+    }
+
     Scaffold(
-        bottomBar = { BottomNav(selected = selectedTab, onSelected = { selectedTab = it }, friendRequestsCount = friendRequestsCount) }
+        bottomBar = { 
+            BottomNav(
+                selected = selectedTab, 
+                onSelected = { selectedTab = it }, 
+                friendRequestsCount = friendRequestsCount,
+                unreadNotificationsCount = unreadNotificationsCount
+            ) 
+        }
     ) { inner ->
         Column(
             modifier = Modifier
@@ -412,6 +455,13 @@ fun HomeScreen(
                         navController = navController, 
                         chatViewModel = chatViewModel,
                         onFriendRequestsCountChange = { count -> friendRequestsCount = count }
+                    )
+                }
+                HomeTab.NOTIFICATIONS -> {
+                    NotificationScreen(
+                        navController = navController,
+                        chatViewModel = chatViewModel,
+                        onUnreadCountChange = { count -> unreadNotificationsCount = count }
                     )
                 }
                 HomeTab.MENU -> {

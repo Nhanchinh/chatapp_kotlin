@@ -41,6 +41,9 @@ import com.example.chatapp.data.remote.model.FCMTokenRequest
 import com.example.chatapp.data.remote.model.FCMTokenResponse
 import com.example.chatapp.data.remote.model.ZegoTokenRequest
 import com.example.chatapp.data.remote.model.ZegoTokenResponse
+import com.example.chatapp.data.remote.model.NotificationsResponse
+import com.example.chatapp.data.remote.model.NotificationCountResponse
+import com.example.chatapp.data.remote.model.NotificationActionResponse
 import com.squareup.moshi.Json
 import retrofit2.http.Body
 import retrofit2.http.DELETE
@@ -319,6 +322,36 @@ interface ApiService {
         @Header("Authorization") authorization: String,
         @Body body: ZegoTokenRequest
     ): ZegoTokenResponse
+
+    // Notifications API
+    @GET("notifications")
+    suspend fun getNotifications(
+        @Header("Authorization") token: String,
+        @Query("limit") limit: Int = 50,
+        @Query("cursor") cursor: String? = null
+    ): NotificationsResponse
+
+    @POST("notifications/{notification_id}/read")
+    suspend fun markNotificationRead(
+        @Header("Authorization") token: String,
+        @Path("notification_id") notificationId: String
+    ): NotificationActionResponse
+
+    @POST("notifications/read_all")
+    suspend fun markAllNotificationsRead(
+        @Header("Authorization") token: String
+    ): NotificationActionResponse
+
+    @DELETE("notifications/{notification_id}")
+    suspend fun deleteNotification(
+        @Header("Authorization") token: String,
+        @Path("notification_id") notificationId: String
+    ): NotificationActionResponse
+
+    @GET("notifications/unread/count")
+    suspend fun getUnreadNotificationCount(
+        @Header("Authorization") token: String
+    ): NotificationCountResponse
 
 }
 

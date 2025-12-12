@@ -28,6 +28,7 @@ import com.example.chatapp.data.local.AuthManager
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.rememberCoroutineScope
+import com.example.chatapp.utils.formatTimeAgo
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -200,7 +201,7 @@ fun FriendRequestItem(
                         )
                     }
                     Text(
-                        text = request.timeAgo,
+                        text = formatTimeAgo(request.timeAgo),
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.Gray
                     )

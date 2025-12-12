@@ -7,6 +7,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Contacts
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -20,7 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
-fun BottomNav(selected: HomeTab, onSelected: (HomeTab) -> Unit, friendRequestsCount: Int = 0) {
+fun BottomNav(selected: HomeTab, onSelected: (HomeTab) -> Unit, friendRequestsCount: Int = 0, unreadNotificationsCount: Int = 0) {
     NavigationBar {
         NavigationBarItem(
             selected = selected == HomeTab.CHATS,
@@ -51,6 +52,30 @@ fun BottomNav(selected: HomeTab, onSelected: (HomeTab) -> Unit, friendRequestsCo
                 }
             },
             label = { Text("Danh bạ") }
+        )
+        NavigationBarItem(
+            selected = selected == HomeTab.NOTIFICATIONS,
+            onClick = { onSelected(HomeTab.NOTIFICATIONS) },
+            icon = {
+                Box {
+                    Icon(Icons.Default.Notifications, contentDescription = null)
+                    if (unreadNotificationsCount > 0) {
+                        Badge(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .offset(x = 12.dp, y = (-4).dp),
+                            containerColor = Color(0xFFFF6B6B)
+                        ) {
+                            Text(
+                                text = if (unreadNotificationsCount > 99) "99+" else unreadNotificationsCount.toString(),
+                                color = Color.White,
+                                fontSize = 10.sp
+                            )
+                        }
+                    }
+                }
+            },
+            label = { Text("Thông báo") }
         )
         NavigationBarItem(
             selected = selected == HomeTab.MENU,

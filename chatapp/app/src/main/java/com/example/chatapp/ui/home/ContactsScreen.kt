@@ -28,6 +28,7 @@ import com.example.chatapp.data.model.FriendRequest
 import com.example.chatapp.data.remote.ApiClient
 import com.example.chatapp.data.remote.model.UserDto
 import com.example.chatapp.ui.navigation.NavRoutes
+import com.example.chatapp.utils.formatTimeAgo
 import com.example.chatapp.viewmodel.ChatViewModel
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
@@ -876,7 +877,7 @@ private fun ContactsFriendRequestItem(
                             )
                         }
                         Text(
-                            text = request.timeAgo,
+                            text = formatTimeAgo(request.timeAgo),
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.Gray
                         )
