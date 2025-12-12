@@ -384,8 +384,20 @@ class ChatRepository(private val context: Context) {
 
             val response = api.downloadMedia("Bearer $token", mediaId)
 
-            val decrypted = e2eeManager.decryptBytes(response.mediaData, response.iv, conversationId, token)
-                ?: return Result.failure(Exception("Không thể giải mã media"))
+            // Check if media is encrypted: if iv is null or empty, media is plaintext (base64 encoded)
+            val decrypted = if (response.iv.isNullOrEmpty()) {
+                // Media is not encrypted, just decode base64
+                try {
+                    android.util.Base64.decode(response.mediaData, android.util.Base64.NO_WRAP)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to decode plaintext media", e)
+                    return Result.failure(Exception("Không thể giải mã media"))
+                }
+            } else {
+                // Media is encrypted, decrypt it
+                e2eeManager.decryptBytes(response.mediaData, response.iv, conversationId, token)
+                    ?: return Result.failure(Exception("Không thể giải mã media"))
+            }
 
             val localPath = saveBytesToCache(response.mediaId, decrypted, response.mimeType)
             Result.success(MediaDownloadResult(response.mediaId, localPath, response.mimeType))

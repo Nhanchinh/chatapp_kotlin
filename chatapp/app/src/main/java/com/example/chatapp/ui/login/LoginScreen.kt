@@ -55,6 +55,14 @@ fun LoginScreen(
                     fcmManager.requestNotificationPermission(activity)
                 }
             }
+            
+            // Get FCM token and send to server after successful login
+            // This ensures push notifications work even after app reinstall
+            val accessToken = authViewModel.authState.value.accessToken
+            if (accessToken != null) {
+                fcmManager.getFCMTokenAndSendToServer(accessToken)
+            }
+            
             onLoginSuccess()
         }
     }
