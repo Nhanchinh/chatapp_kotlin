@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -590,11 +591,29 @@ fun ChatScreen(
                         }
                     }
                     
-                    items(messages) { message ->
+                    itemsIndexed(messages) { index, message ->
                         val msgType = message.messageType?.lowercase()
                         val isCallLog = msgType?.startsWith("call_log") == true
                         val isMissed = msgType == "missed_call" || msgType == "missed_call_video" || msgType == "missed_call_audio"
                         val isRejected = msgType?.startsWith("rejected_call") == true
+                        
+                        // Check if previous message is from same sender (for group chats only)
+                        val previousMessage = if (index > 0) messages[index - 1] else null
+                        val showSenderInfo = if (isGroup && !message.isFromMe) {
+                            // In group: show name/avatar only if first message from this sender
+                            previousMessage == null || 
+                            previousMessage.isFromMe || 
+                            previousMessage.senderId != message.senderId ||
+                            previousMessage.messageType?.lowercase()?.startsWith("call_log") == true ||
+                            previousMessage.messageType?.lowercase() == "missed_call" ||
+                            previousMessage.messageType?.lowercase() == "missed_call_video" ||
+                            previousMessage.messageType?.lowercase() == "missed_call_audio" ||
+                            previousMessage.messageType?.lowercase()?.startsWith("rejected_call") == true
+                        } else {
+                            // In 1-1 chat: always show avatar for other person's messages
+                            !message.isFromMe
+                        }
+                        
                         if (isCallLog || isMissed || isRejected) {
                             CallLogMessageItem(
                                 message = message,
@@ -655,10 +674,10 @@ fun ChatScreen(
                                 },
                                 onReplyClick = { replyToMessageId ->
                                     // Scroll to the replied message and highlight it
-                                    val index = messages.indexOfFirst { it.id == replyToMessageId }
-                                    if (index != -1) {
+                                    val msgIndex = messages.indexOfFirst { it.id == replyToMessageId }
+                                    if (msgIndex != -1) {
                                         scope.launch {
-                                            listState.animateScrollToItem(index)
+                                            listState.animateScrollToItem(msgIndex)
                                             // Highlight the message
                                             highlightedMessageId = replyToMessageId
                                             // Auto-clear highlight after 2 seconds
@@ -669,7 +688,9 @@ fun ChatScreen(
                                 },
                                 allMessages = messages,
                                 isHighlighted = message.id == highlightedMessageId,
-                                onDismissHighlight = { highlightedMessageId = null }
+                                onDismissHighlight = { highlightedMessageId = null },
+                                isGroup = isGroup,
+                                showSenderInfo = showSenderInfo
                             )
                         }
                     }
@@ -1279,7 +1300,9 @@ private fun MessageBubble(
     onReplyClick: ((String) -> Unit)? = null,
     allMessages: List<Message> = emptyList(),  // To find replied message
     isHighlighted: Boolean = false,
-    onDismissHighlight: () -> Unit = {}
+    onDismissHighlight: () -> Unit = {},
+    isGroup: Boolean = false,
+    showSenderInfo: Boolean = true  // Show sender name and avatar (for group chats)
 ) {
     val isFromMe = message.isFromMe
     val isDeleted = message.deleted
@@ -1322,12 +1345,27 @@ private fun MessageBubble(
             ),
         horizontalArrangement = if (isFromMe) Arrangement.End else Arrangement.Start
     ) {
-        if (!isFromMe) {
+        // Only show avatar if showSenderInfo is true (first message in sequence)
+        if (!isFromMe && showSenderInfo) {
             AvatarCircle(initial = (message.senderName ?: "?").firstOrNull()?.uppercaseChar() ?: '?')
             Spacer(modifier = Modifier.width(8.dp))
+        } else if (!isFromMe && !showSenderInfo) {
+            // Add spacing to align with messages that have avatar
+            Spacer(modifier = Modifier.width(48.dp))
         }
 
         Column(horizontalAlignment = if (isFromMe) Alignment.End else Alignment.Start) {
+            // Only show sender name if showSenderInfo is true (first message in sequence)
+            if (!isFromMe && isGroup && showSenderInfo) {
+                val senderName = message.senderName ?: "Người dùng"
+                Text(
+                    text = senderName,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF555555),
+                    modifier = Modifier.padding(bottom = 2.dp)
+                )
+            }
             // Reply preview (if this message is replying to another)
             if (repliedMessage != null) {
                 // Logic: Determine who is being replied to from current user's perspective
