@@ -23,6 +23,13 @@ import androidx.navigation.NavController
 import com.example.chatapp.ui.navigation.NavRoutes
 import com.example.chatapp.viewmodel.ChatViewModel
 import android.net.Uri
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
+import com.example.chatapp.utils.UrlHelper
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
+import com.example.chatapp.data.local.AuthManager
+import com.example.chatapp.data.remote.ApiClient
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -30,6 +37,7 @@ fun ContactInfoScreen(
     contactName: String,
     contactId: String? = null,
     conversationId: String? = null,
+    contactAvatar: String? = null,
     chatViewModel: ChatViewModel,
     onBack: () -> Unit,
     onDeleteConversation: () -> Unit,
@@ -38,6 +46,23 @@ fun ContactInfoScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var isDeleting by remember { mutableStateOf(false) }
     var deleteError by remember { mutableStateOf<String?>(null) }
+    
+    // Fetch user avatar from API if not provided
+    var fetchedAvatar by remember { mutableStateOf<String?>(contactAvatar) }
+    val context = LocalContext.current
+    
+    LaunchedEffect(contactId) {
+        if (contactAvatar == null && contactId != null) {
+            try {
+                val auth = AuthManager(context)
+                val token = auth.getValidAccessToken()
+                if (token != null) {
+                    val user = ApiClient.apiService.getUserById("Bearer $token", contactId)
+                    fetchedAvatar = user.avatar
+                }
+            } catch (_: Exception) { }
+        }
+    }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -91,11 +116,23 @@ fun ContactInfoScreen(
                             .background(Color(0xFF90CAF9)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = contactName.firstOrNull()?.uppercase() ?: "?",
-                            color = Color.White,
-                            style = MaterialTheme.typography.displayMedium
-                        )
+                        val avatarUrl = UrlHelper.avatar(fetchedAvatar)
+                        if (avatarUrl != null) {
+                            AsyncImage(
+                                model = avatarUrl,
+                                contentDescription = "Avatar",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(120.dp)
+                                    .clip(CircleShape)
+                            )
+                        } else {
+                            Text(
+                                text = contactName.firstOrNull()?.uppercase() ?: "?",
+                                color = Color.White,
+                                style = MaterialTheme.typography.displayMedium
+                            )
+                        }
                     }
                     
                     Spacer(modifier = Modifier.height(16.dp))

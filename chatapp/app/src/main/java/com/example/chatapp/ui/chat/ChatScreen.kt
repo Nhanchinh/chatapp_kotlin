@@ -115,6 +115,7 @@ import androidx.core.content.ContextCompat
 import com.example.chatapp.data.model.MediaStatus
 import com.example.chatapp.data.model.Message
 import com.example.chatapp.ui.common.KeyboardDismissWrapper
+import com.example.chatapp.ui.components.Avatar
 import com.example.chatapp.utils.rememberImagePickerLauncher
 import com.example.chatapp.utils.rememberVideoPickerLauncher
 import com.example.chatapp.utils.rememberFilePickerLauncher
@@ -371,8 +372,15 @@ fun ChatScreen(
     KeyboardDismissWrapper(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             topBar = {
+                // Get the title and replace user ID with "Người Lạ" if it's an unfriended user
+                val rawTitle = chatViewModel.currentContactName.collectAsStateWithLifecycle().value ?: contactName ?: contactId
+                val displayTitle = if (rawTitle.matches(Regex("^[a-f0-9]{24}$"))) {
+                    "Người Lạ"
+                } else {
+                    rawTitle
+                }
                 ChatTopBar(
-                    title = chatViewModel.currentContactName.collectAsStateWithLifecycle().value ?: contactName ?: contactId,
+                    title = displayTitle,
                     onBack = onBack,
                     onInfoClick = onInfoClick,
                     isGroup = isGroup,
@@ -1208,8 +1216,6 @@ private fun ChatTopBar(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                AvatarCircle(initial = title.firstOrNull()?.uppercaseChar() ?: '❓')
-                Spacer(modifier = Modifier.width(12.dp))
                 Column {
                     Text(
                         text = title,
@@ -1347,7 +1353,17 @@ private fun MessageBubble(
     ) {
         // Only show avatar if showSenderInfo is true (first message in sequence)
         if (!isFromMe && showSenderInfo) {
-            AvatarCircle(initial = (message.senderName ?: "?").firstOrNull()?.uppercaseChar() ?: '?')
+            val avatarName = message.senderName ?: "?"
+            val displayAvatarName = if (avatarName.matches(Regex("^[a-f0-9]{24}$"))) {
+                "Người Lạ"
+            } else {
+                avatarName
+            }
+            Avatar(
+                name = displayAvatarName,
+                imageUrl = message.senderAvatar,  // Use avatar URL from server
+                sizeDp = 40
+            )
             Spacer(modifier = Modifier.width(8.dp))
         } else if (!isFromMe && !showSenderInfo) {
             // Add spacing to align with messages that have avatar
@@ -1357,7 +1373,12 @@ private fun MessageBubble(
         Column(horizontalAlignment = if (isFromMe) Alignment.End else Alignment.Start) {
             // Only show sender name if showSenderInfo is true (first message in sequence)
             if (!isFromMe && isGroup && showSenderInfo) {
-                val senderName = message.senderName ?: "Người dùng"
+                val rawSenderName = message.senderName ?: "Người dùng"
+                val senderName = if (rawSenderName.matches(Regex("^[a-f0-9]{24}$"))) {
+                    "Người Lạ"
+                } else {
+                    rawSenderName
+                }
                 Text(
                     text = senderName,
                     style = MaterialTheme.typography.labelSmall,

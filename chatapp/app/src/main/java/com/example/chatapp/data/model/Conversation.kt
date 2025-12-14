@@ -13,7 +13,8 @@ data class Conversation(
     val lastMessageSenderId: String? = null,
     val isGroup: Boolean = false,
     val groupKeyVersion: Int? = null,
-    val ownerId: String? = null
+    val ownerId: String? = null,
+    val avatar: String? = null  // Avatar URL of the other participant
 )
 
 

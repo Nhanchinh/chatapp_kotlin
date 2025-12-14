@@ -27,6 +27,7 @@ import com.example.chatapp.ui.navigation.NavRoutes
 import com.example.chatapp.viewmodel.AuthViewModel
 import com.example.chatapp.data.local.AuthManager
 import com.example.chatapp.data.remote.ApiClient
+import com.example.chatapp.ui.components.Avatar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -93,32 +94,12 @@ fun MenuScreen(navController: NavController? = null, authViewModel: AuthViewMode
                         .padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(64.dp)
-                            .clip(CircleShape)
-                            .background(
-                                brush = androidx.compose.ui.graphics.Brush.radialGradient(
-                                    colors = listOf(
-                                        Color(0xFF667EEA),
-                                        Color(0xFF764BA2)
-                                    )
-                                )
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = (authState.userFullName ?: authState.userEmail ?: "?")
-                                .split(" ")
-                                .take(2)
-                                .mapNotNull { it.firstOrNull()?.toString() }
-                                .joinToString("")
-                                .uppercase().ifEmpty { "?" },
-                            color = Color.White,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                    // Use Avatar component with user's avatar from AuthState
+                    Avatar(
+                        name = authState.userFullName ?: authState.userEmail ?: "?",
+                        imageUrl = authState.userAvatar,  // User's avatar from AuthState
+                        sizeDp = 64
+                    )
                     Spacer(modifier = Modifier.width(16.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(

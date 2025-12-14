@@ -2,7 +2,6 @@ package com.example.chatapp.ui.profile
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -13,16 +12,18 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.chatapp.data.local.AuthManager
 import com.example.chatapp.data.remote.ApiClient
 import com.example.chatapp.data.remote.model.UserDto
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
+import com.example.chatapp.utils.UrlHelper
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,6 +35,11 @@ fun OtherUserProfileScreen(
     var isLoading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
+
+    // Blue gradient color for avatar border (matches app theme)
+    val blueGradient = androidx.compose.ui.graphics.Brush.linearGradient(
+        colors = listOf(Color(0xFF64B5F6), Color(0xFF2196F3))
+    )
 
     LaunchedEffect(userId) {
         isLoading = true
@@ -54,7 +60,32 @@ fun OtherUserProfileScreen(
         }
     }
 
-    Scaffold { paddingValues ->
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = Color.Black
+                        )
+                    }
+                },
+                title = {
+                    Text(
+                        text = "Trang cá nhân",
+                        fontWeight = FontWeight.Medium,
+                        color = Color.Black
+                    )
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.White
+                )
+            )
+        },
+        containerColor = Color.White
+    ) { paddingValues ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -62,7 +93,8 @@ fun OtherUserProfileScreen(
         ) {
             if (isLoading) {
                 CircularProgressIndicator(
-                    modifier = Modifier.align(Alignment.Center)
+                    modifier = Modifier.align(Alignment.Center),
+                    color = Color(0xFF2196F3)
                 )
             } else if (error != null) {
                 Column(
@@ -78,169 +110,172 @@ fun OtherUserProfileScreen(
                         style = MaterialTheme.typography.bodyLarge
                     )
                     Spacer(modifier = Modifier.height(16.dp))
-                    Button(onClick = onBack) {
+                    Button(
+                        onClick = onBack,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2196F3))
+                    ) {
                         Text("Quay lại")
                     }
                 }
             } else {
                 val currentUserInfo = userInfo
                 if (currentUserInfo != null) {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = 24.dp)
+                    val userName = currentUserInfo.fullName ?: currentUserInfo.email ?: "Unknown"
+                    val userEmail = currentUserInfo.email ?: ""
+                    
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.White)
                     ) {
-                        // Profile Header with gradient background
-                        item {
+                        Spacer(modifier = Modifier.height(24.dp))
+                        
+                        // Profile header: Avatar left, Info right (same as UserProfileScreen)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Avatar with blue gradient border
                             Box(
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(240.dp)
-                                    .background(
-                                        brush = Brush.verticalGradient(
-                                            colors = listOf(
-                                                Color(0xFF2196F3),
-                                                Color(0xFF1976D2)
-                                            )
-                                        )
-                                    )
+                                    .size(90.dp)
+                                    .clip(CircleShape)
+                                    .background(blueGradient),
+                                contentAlignment = Alignment.Center
                             ) {
-                                // Back button at top
-                                IconButton(
-                                    onClick = onBack,
+                                Box(
                                     modifier = Modifier
-                                        .align(Alignment.TopStart)
-                                        .padding(8.dp)
+                                        .size(82.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.White),
+                                    contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(
-                                        Icons.AutoMirrored.Filled.ArrowBack,
-                                        contentDescription = "Back",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(24.dp)
-                                    )
-                                }
-                                
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .align(Alignment.BottomCenter)
-                                        .padding(bottom = 40.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    // Avatar with shadow
-                                    Box(
-                                        modifier = Modifier
-                                            .size(110.dp)
-                                            .shadow(
-                                                elevation = 12.dp,
-                                                shape = CircleShape,
-                                                spotColor = Color.Black.copy(alpha = 0.3f)
-                                            )
-                                            .clip(CircleShape)
-                                            .background(Color.White),
-                                        contentAlignment = Alignment.Center
-                                    ) {
+                                    val avatarUrl = UrlHelper.avatar(currentUserInfo.avatar)
+                                    if (avatarUrl != null) {
+                                        AsyncImage(
+                                            model = avatarUrl,
+                                            contentDescription = "Profile photo",
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier
+                                                .size(78.dp)
+                                                .clip(CircleShape)
+                                        )
+                                    } else {
                                         Box(
                                             modifier = Modifier
-                                                .size(106.dp)
+                                                .size(78.dp)
                                                 .clip(CircleShape)
-                                                .background(
-                                                    brush = Brush.radialGradient(
-                                                        colors = listOf(
-                                                            Color(0xFF90CAF9),
-                                                            Color(0xFF64B5F6)
-                                                        )
-                                                    )
-                                                ),
+                                                .background(Color(0xFFB39DDB)),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Text(
-                                                text = (currentUserInfo.fullName ?: currentUserInfo.email ?: "?").firstOrNull()?.uppercase() ?: "?",
+                                                text = userName.split(" ").mapNotNull { it.firstOrNull()?.toString() }.take(2).joinToString("").uppercase(),
                                                 color = Color.White,
-                                                style = MaterialTheme.typography.displayLarge,
+                                                fontSize = 28.sp,
                                                 fontWeight = FontWeight.Bold
                                             )
                                         }
                                     }
-                                    
-                                    Spacer(modifier = Modifier.height(20.dp))
-                                    
-                                    // Name
+                                }
+                            }
+                            
+                            Spacer(modifier = Modifier.width(16.dp))
+                            
+                            // User info
+                            Column(
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                // Name
+                                Text(
+                                    text = userName,
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.Black
+                                )
+                                
+                                // Email
+                                if (userEmail.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.height(4.dp))
                                     Text(
-                                        text = currentUserInfo.fullName ?: currentUserInfo.email ?: "Unknown",
-                                        style = MaterialTheme.typography.headlineMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White
+                                        text = userEmail,
+                                        fontSize = 14.sp,
+                                        color = Color.Gray
                                     )
-                                    
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    
-                                    // Email
-                                    currentUserInfo.email?.let { email ->
-                                        Text(
-                                            text = email,
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            color = Color.White.copy(alpha = 0.95f)
-                                        )
+                                }
+                                
+                                // Friend count badge
+                                currentUserInfo.friendCount?.let { count ->
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Surface(
+                                        color = Color(0xFFE3F2FD),
+                                        shape = RoundedCornerShape(16.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Group,
+                                                contentDescription = null,
+                                                tint = Color(0xFF2196F3),
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "$count người bạn",
+                                                fontSize = 13.sp,
+                                                color = Color(0xFF2196F3),
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        }
                                     }
                                 }
                             }
                         }
                         
-                        // Info Cards Section
-                        item {
-                            Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(32.dp))
+                        
+                        // Chi tiết section (same as UserProfileScreen but without edit button)
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                        ) {
+                            Text(
+                                text = "Chi tiết",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.Black
+                            )
                             
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                                verticalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                // Friend count
-                                currentUserInfo.friendCount?.let { friendCount ->
-                                    InfoCard(
-                                        icon = Icons.Default.People,
-                                        title = "Bạn bè",
-                                        value = "$friendCount",
-                                        iconTint = Color(0xFF2196F3)
-                                    )
-                                }
-
-                                // Location
-                                currentUserInfo.location?.let { location ->
-                                    InfoCard(
-                                        icon = Icons.Default.LocationOn,
-                                        title = "Địa điểm",
-                                        value = location,
-                                        iconTint = Color(0xFF4CAF50)
-                                    )
-                                }
-
-                                // Hometown
-                                currentUserInfo.hometown?.let { hometown ->
-                                    InfoCard(
-                                        icon = Icons.Default.Home,
-                                        title = "Quê quán",
-                                        value = hometown,
-                                        iconTint = Color(0xFFFF9800)
-                                    )
-                                }
-
-                                // Birth year
-                                currentUserInfo.birthYear?.let { birthYear ->
-                                    InfoCard(
-                                        icon = Icons.Default.Cake,
-                                        title = "Năm sinh",
-                                        value = "$birthYear",
-                                        iconTint = Color(0xFFE91E63)
-                                    )
-                                }
-                            }
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            OtherProfileDetailItem(
+                                icon = Icons.Default.Home,
+                                label = "Sống tại",
+                                value = currentUserInfo.location ?: "Chưa cập nhật"
+                            )
+                            
+                            Spacer(modifier = Modifier.height(12.dp))
+                            
+                            OtherProfileDetailItem(
+                                icon = Icons.Default.LocationCity,
+                                label = "Đến từ",
+                                value = currentUserInfo.hometown ?: "Chưa cập nhật"
+                            )
+                            
+                            Spacer(modifier = Modifier.height(12.dp))
+                            
+                            OtherProfileDetailItem(
+                                icon = Icons.Default.Cake,
+                                label = "Năm sinh",
+                                value = currentUserInfo.birthYear?.toString() ?: "Chưa cập nhật"
+                            )
                         }
-
-                        item {
-                            Spacer(modifier = Modifier.height(72.dp))
-                        }
+                        
+                        Spacer(modifier = Modifier.weight(1f))
                     }
                 }
             }
@@ -249,61 +284,39 @@ fun OtherUserProfileScreen(
 }
 
 @Composable
-private fun InfoCard(
+private fun OtherProfileDetailItem(
     icon: ImageVector,
-    title: String,
-    value: String,
-    iconTint: Color
+    label: String,
+    value: String
 ) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .shadow(
-                elevation = 2.dp,
-                shape = RoundedCornerShape(12.dp),
-                spotColor = Color.Black.copy(alpha = 0.1f)
-            ),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.White
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = Color(0xFFF5F5F5),
+        shape = RoundedCornerShape(12.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(iconTint.copy(alpha = 0.1f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = iconTint,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-            
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = Color(0xFF2196F3),
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Column {
                 Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodySmall,
+                    text = label,
+                    fontSize = 12.sp,
                     color = Color.Gray
                 )
-                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = value,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
                     color = Color.Black
                 )
             }

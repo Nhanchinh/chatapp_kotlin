@@ -13,7 +13,8 @@ data class UserDto(
     @Json(name = "birth_year") val birthYear: Int? = null,
     @Json(name = "is_online") val isOnline: Boolean? = null,
     @Json(name = "last_seen") val lastSeen: String? = null,
-    @Json(name = "public_key") val publicKey: String? = null  // RSA public key for E2EE
+    @Json(name = "public_key") val publicKey: String? = null,  // RSA public key for E2EE
+    val avatar: String? = null  // Relative path: /static/avatars/xxx.jpg
 )
 
 data class RegisterRequest(

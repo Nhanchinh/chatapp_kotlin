@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.chatapp.ui.components.Avatar
 
 @Composable
 fun ConversationItem(
@@ -33,6 +34,7 @@ fun ConversationItem(
     time: String,
     isOnline: Boolean,
     unreadCount: Int = 0,
+    avatar: String? = null,  // Avatar URL (relative path from server)
     modifier: Modifier = Modifier,
     onClick: () -> Unit = {}
 ) {
@@ -52,15 +54,12 @@ fun ConversationItem(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(modifier = Modifier.size(48.dp)) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFF90CAF9)),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(text = name.firstOrNull()?.uppercase() ?: "?", color = Color.White)
-            }
+            // Use Avatar component with imageUrl support
+            Avatar(
+                name = name,
+                imageUrl = avatar,
+                sizeDp = 48
+            )
             if (isOnline) {
                 Box(
                     modifier = Modifier

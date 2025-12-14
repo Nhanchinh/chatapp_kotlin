@@ -45,16 +45,24 @@ import com.example.chatapp.data.remote.model.NotificationsResponse
 import com.example.chatapp.data.remote.model.NotificationCountResponse
 import com.example.chatapp.data.remote.model.NotificationActionResponse
 import com.squareup.moshi.Json
+import okhttp3.MultipartBody
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.Field
 import retrofit2.http.FormUrlEncoded
 import retrofit2.http.GET
 import retrofit2.http.Header
+import retrofit2.http.Multipart
 import retrofit2.http.PATCH
 import retrofit2.http.POST
+import retrofit2.http.Part
 import retrofit2.http.Query
 import retrofit2.http.Path
+
+// Avatar Upload Response
+data class AvatarUploadResponse(
+    val avatar: String  // Relative path: /static/avatars/xxx.jpg
+)
 
 // Reactions API Models
 data class ReactRequest(
@@ -90,6 +98,14 @@ interface ApiService {
         @Header("Authorization") token: String,
         @Body body: ProfileUpdateRequest
     ): UserDto
+
+    // Avatar Upload API
+    @Multipart
+    @POST("users/me/avatar")
+    suspend fun uploadAvatar(
+        @Header("Authorization") token: String,
+        @Part file: MultipartBody.Part
+    ): AvatarUploadResponse
 
     @GET("users/search")
     suspend fun searchUsers(

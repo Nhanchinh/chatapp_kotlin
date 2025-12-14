@@ -22,9 +22,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.chatapp.ui.components.Avatar
 
 @Composable
-fun StoryAvatar(name: String, online: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit = {}) {
+fun StoryAvatar(
+    name: String, 
+    online: Boolean, 
+    avatar: String? = null,  // Avatar URL (relative path)
+    modifier: Modifier = Modifier, 
+    onClick: () -> Unit = {}
+) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
@@ -38,17 +45,15 @@ fun StoryAvatar(name: String, online: Boolean, modifier: Modifier = Modifier, on
                     .size(62.dp)
                     .clip(CircleShape)
                     .background(ring)
-                    .padding(3.dp)
+                    .padding(3.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Box(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .clip(CircleShape)
-                        .background(Color(0xFFB39DDB)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(text = name.firstOrNull()?.uppercase() ?: "?", color = Color.White)
-                }
+                // Use Avatar component with imageUrl support
+                Avatar(
+                    name = name,
+                    imageUrl = avatar,
+                    sizeDp = 56
+                )
             }
             if (online) {
                 Box(

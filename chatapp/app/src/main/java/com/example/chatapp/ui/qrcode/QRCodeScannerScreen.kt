@@ -26,6 +26,12 @@ import com.example.chatapp.data.remote.model.UserDto
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import kotlinx.coroutines.launch
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import com.example.chatapp.utils.UrlHelper
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -209,12 +215,24 @@ fun QRCodeScannerScreen(
                                 .padding(8.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Surface(
-                                modifier = Modifier.size(80.dp),
-                                shape = androidx.compose.foundation.shape.CircleShape,
-                                color = Color(0xFF90CAF9)
+                            Box(
+                                modifier = Modifier
+                                    .size(80.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF90CAF9)),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Box(contentAlignment = Alignment.Center) {
+                                val avatarUrl = UrlHelper.avatar(currentScannedUserForDisplay.avatar)
+                                if (avatarUrl != null) {
+                                    AsyncImage(
+                                        model = avatarUrl,
+                                        contentDescription = "Avatar",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier
+                                            .size(80.dp)
+                                            .clip(CircleShape)
+                                    )
+                                } else {
                                     Text(
                                         text = (currentScannedUserForDisplay.fullName ?: currentScannedUserForDisplay.email ?: "?")
                                             .firstOrNull()?.uppercase() ?: "?",

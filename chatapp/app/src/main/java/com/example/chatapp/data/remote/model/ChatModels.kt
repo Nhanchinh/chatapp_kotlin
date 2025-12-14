@@ -13,7 +13,8 @@ data class ConversationDto(
     @Json(name = "is_group") val isGroup: Boolean? = null,
     val name: String? = null,
     @Json(name = "group_key_version") val groupKeyVersion: Int? = null,
-    @Json(name = "owner_id") val ownerId: String? = null
+    @Json(name = "owner_id") val ownerId: String? = null,
+    @Json(name = "other_participant_avatar") val otherParticipantAvatar: String? = null
 )
 
 data class ConversationsResponse(
@@ -41,7 +42,8 @@ data class MessageDto(
     val deleted: Boolean = false,  // True if message is deleted/recalled
     @Json(name = "reply_to") val replyTo: String? = null,  // ID of message being replied to
     val reactions: Map<String, String>? = null,  // {user_id: emoji} - Simple reactions
-    @Json(name = "message_type") val messageType: String? = null
+    @Json(name = "message_type") val messageType: String? = null,
+    @Json(name = "sender_avatar") val senderAvatar: String? = null  // Sender's avatar relative path
 )
 
 data class MessagesResponse(

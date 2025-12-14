@@ -225,7 +225,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                                         lastMessageSenderId = dto.lastMessageSenderId,
                                         isGroup = dto.isGroup ?: false,
                                         groupKeyVersion = dto.groupKeyVersion,
-                                        ownerId = dto.ownerId
+                                        ownerId = dto.ownerId,
+                                        avatar = dto.otherParticipantAvatar
                                     )
                                 } catch (e: Exception) {
                                     android.util.Log.e("ChatViewModel", "Error processing conversation ${dto.id}", e)
@@ -470,7 +471,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                             lastMessageSenderId = dto.lastMessageSenderId,
                             isGroup = dto.isGroup ?: false,  // **CRITICAL**: Include isGroup to filter groups
                             groupKeyVersion = dto.groupKeyVersion,
-                            ownerId = dto.ownerId
+                            ownerId = dto.ownerId,
+                            avatar = dto.otherParticipantAvatar
                         )
                     }
                     _conversations.value = updatedConversations
@@ -655,6 +657,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                             isFromMe = dto.senderId == me,
                             senderName = senderDisplayName,
                             senderId = dto.senderId,
+                            senderAvatar = dto.senderAvatar,  // Map avatar from server
                             receiverId = dto.receiverId,
                             conversationId = dto.conversationId,
                             delivered = dto.delivered,

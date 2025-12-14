@@ -61,7 +61,8 @@ class AuthRepository(context: Context) {
                     friendCount = user.friendCount,
                     location = user.location,
                     hometown = user.hometown,
-                    birthYear = user.birthYear
+                    birthYear = user.birthYear,
+                    avatar = user.avatar  // Save avatar from login response
                 )
                 
                 ensurePublicKeySynced(response.requiresPublicKey == true)
@@ -182,7 +183,8 @@ class AuthRepository(context: Context) {
                 friendCount = updatedUser.friendCount,
                 location = updatedUser.location,
                 hometown = updatedUser.hometown,
-                birthYear = updatedUser.birthYear
+                birthYear = updatedUser.birthYear,
+                avatar = updatedUser.avatar  // Save avatar from update response
             )
             Result.success(updatedUser)
         } catch (e: Exception) {

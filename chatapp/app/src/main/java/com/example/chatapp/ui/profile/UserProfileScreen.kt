@@ -1,5 +1,6 @@
 package com.example.chatapp.ui.profile
 
+import android.content.Context
 import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -15,15 +16,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
+import com.example.chatapp.data.remote.ApiClient
+import com.example.chatapp.utils.UrlHelper
 import com.example.chatapp.utils.rememberImagePickerLauncher
 import com.example.chatapp.viewmodel.AuthViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.InputStream
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -31,200 +41,484 @@ fun UserProfileScreen(
     authViewModel: AuthViewModel,
     onBack: () -> Unit
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val authState by authViewModel.authState.collectAsState()
     val userName = authState.userFullName ?: authState.userEmail ?: "Người dùng"
     val subEmail = authState.userEmail ?: ""
     var coverImageUri by remember { mutableStateOf<Uri?>(null) }
-    var profileImageUri by remember { mutableStateOf<Uri?>(null) }
+    var isUploadingAvatar by remember { mutableStateOf(false) }
+    var uploadError by remember { mutableStateOf<String?>(null) }
+    var showAvatarOptionsSheet by remember { mutableStateOf(false) }  // Show avatar options bottom sheet
     
     val coverImagePicker = rememberImagePickerLauncher { uri ->
         coverImageUri = uri
     }
     
+    // Avatar picker with upload logic
     val profileImagePicker = rememberImagePickerLauncher { uri ->
-        profileImageUri = uri
+        uri?.let { selectedUri ->
+            scope.launch {
+                isUploadingAvatar = true
+                uploadError = null
+                try {
+                    val result = uploadAvatarToServer(context, selectedUri)
+                    if (result != null) {
+                        authViewModel.updateAvatarInState(result)
+                    } else {
+                        uploadError = "Upload thất bại"
+                    }
+                } catch (e: Exception) {
+                    uploadError = e.message ?: "Lỗi không xác định"
+                } finally {
+                    isUploadingAvatar = false
+                }
+            }
+        }
     }
+    
+    // Blue gradient color for avatar border (matches app theme)
+    val blueGradient = androidx.compose.ui.graphics.Brush.linearGradient(
+        colors = listOf(Color(0xFF64B5F6), Color(0xFF2196F3))
+    )
+    
+    var showEditDialog by remember { mutableStateOf(false) }
     
     Scaffold(
         topBar = {
             TopAppBar(
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            Icons.Default.ArrowBack,
+                            contentDescription = "Back",
+                            tint = Color.Black
+                        )
+                    }
+                },
                 title = {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(onClick = onBack) {
-                            Icon(
-                                Icons.Default.ArrowBack,
-                                contentDescription = "Back",
-                                tint = Color(0xFF2196F3)
-                            )
-                        }
-                        Spacer(modifier = Modifier.weight(1f))
-                        // No actions on profile for now
+                    Text(
+                        text = "Hồ sơ",
+                        fontWeight = FontWeight.Medium,
+                        color = Color.Black
+                    )
+                },
+                actions = {
+                    IconButton(onClick = { /* Menu options */ }) {
+                        Icon(
+                            Icons.Default.MoreVert,
+                            contentDescription = "Menu",
+                            tint = Color.Black
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Transparent,
-                    titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White,
-                    actionIconContentColor = Color.White
-                ),
-                modifier = Modifier.background(Color.Transparent)
+                    containerColor = Color.White
+                )
             )
-        }
+        },
+        containerColor = Color.White
     ) { paddingValues ->
+        var showEditNameDialog by remember { mutableStateOf(false) }
+        
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
+                .background(Color.White)
         ) {
-            // Cover photo area
-            Box(modifier = Modifier.fillMaxWidth()) {
-                // Cover photo
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp)
-                        .clip(RoundedCornerShape(bottomStart = 20.dp, bottomEnd = 20.dp))
-                        .background(Color(0xFFE67E22))
-                        .clickable { coverImagePicker.launch("image/*") },
-                    contentAlignment = Alignment.Center
-                ) {
-                    coverImageUri?.let { uri ->
-                        AsyncImage(
-                            model = uri,
-                            contentDescription = "Cover photo",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-                }
-                
-                // Keep UI minimal: no extra cover actions
-            }
+            Spacer(modifier = Modifier.height(24.dp))
             
-            Column(
+            // Profile header: Avatar left, Info right
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color.White)
-                    .padding(horizontal = 16.dp)
+                    .padding(horizontal = 24.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Avatar centered
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center
+                // Avatar with orange gradient border
+                Box(
+                    modifier = Modifier
+                        .size(90.dp)
+                        .clip(CircleShape)
+                        .background(blueGradient)
+                        .clickable(enabled = !isUploadingAvatar) { showAvatarOptionsSheet = true },
+                    contentAlignment = Alignment.Center
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(96.dp)
-                            .offset(y = (-32).dp)
+                            .size(82.dp)
+                            .clip(CircleShape)
+                            .background(Color.White),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .matchParentSize()
-                                .clip(CircleShape)
-                                .background(Color(0xFFB39DDB))
-                                .clickable { profileImagePicker.launch("image/*") },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            profileImageUri?.let { uri ->
-                                AsyncImage(
-                                    model = uri,
-                                    contentDescription = "Profile photo",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            } ?: Text(
-                                text = userName.split(" ").map { it.firstOrNull() ?: "" }.joinToString("").uppercase(),
-                                color = Color.White,
-                                style = MaterialTheme.typography.headlineLarge,
-                                fontWeight = FontWeight.Bold
+                        val avatarUrl = UrlHelper.avatar(authState.userAvatar)
+                        if (avatarUrl != null) {
+                            AsyncImage(
+                                model = avatarUrl,
+                                contentDescription = "Profile photo",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(78.dp)
+                                    .clip(CircleShape)
                             )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .size(78.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFB39DDB)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = userName.split(" ").mapNotNull { it.firstOrNull()?.toString() }.take(2).joinToString("").uppercase(),
+                                    color = Color.White,
+                                    fontSize = 28.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                        
+                        if (isUploadingAvatar) {
+                            Box(
+                                modifier = Modifier
+                                    .size(78.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.Black.copy(alpha = 0.5f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(
+                                    color = Color.White,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
                         }
                     }
                 }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Name, email, friend count centered
+                
+                Spacer(modifier = Modifier.width(16.dp))
+                
+                // User info
                 Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                    modifier = Modifier.weight(1f)
                 ) {
-                    Text(text = userName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    // Name with edit icon
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = userName,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.Black
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "Chỉnh sửa tên",
+                            tint = Color.Gray,
+                            modifier = Modifier
+                                .size(18.dp)
+                                .clickable { showEditNameDialog = true }
+                        )
+                    }
+                    
+                    // Email
                     if (subEmail.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text(text = subEmail, color = Color.Gray)
+                        Text(
+                            text = subEmail,
+                            fontSize = 14.sp,
+                            color = Color.Gray
+                        )
                     }
+                    
+                    // Friend count badge
                     authState.userFriendCount?.let { count ->
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
                         Surface(
-                            color = Color(0xFFEFF3FF),
-                            shape = RoundedCornerShape(12.dp)
+                            color = Color(0xFFE3F2FD),
+                            shape = RoundedCornerShape(16.dp)
                         ) {
-                            Text(
-                                text = "$count người bạn",
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color(0xFF1A73E8)
-                            )
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Group,
+                                    contentDescription = null,
+                                    tint = Color(0xFF2196F3),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "$count người bạn",
+                                    fontSize = 13.sp,
+                                    color = Color(0xFF2196F3),
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
                         }
                     }
                 }
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // Details card with Edit button
+            }
+            
+            // Upload error
+            uploadError?.let { error ->
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = error,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(horizontal = 24.dp)
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(32.dp))
+            
+            // Chi tiết section
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+            ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(text = "Chi tiết", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    var showEditDialog by remember { mutableStateOf(false) }
-                    IconButton(onClick = { showEditDialog = true }) {
-                        Icon(Icons.Default.Edit, contentDescription = "Chỉnh sửa", tint = Color(0xFF2196F3))
-                    }
-                    if (showEditDialog) {
-                        EditProfileDialog(
-                            authViewModel = authViewModel,
-                            onDismiss = { showEditDialog = false }
-                        )
-                    }
+                    Text(
+                        text = "Chi tiết",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.Black
+                    )
+                    Text(
+                        text = "Chỉnh sửa",
+                        fontSize = 14.sp,
+                        color = Color(0xFF2196F3),
+                        modifier = Modifier.clickable { showEditDialog = true }
+                    )
                 }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                DetailItem(
+                    icon = Icons.Default.Home,
+                    label = "Sống tại",
+                    value = authState.userLocation ?: "Chưa cập nhật"
+                )
+                
                 Spacer(modifier = Modifier.height(12.dp))
-                Surface(
-                    color = Color(0xFFF7F7F7),
-                    shape = RoundedCornerShape(12.dp)
+                
+                DetailItem(
+                    icon = Icons.Default.LocationCity,
+                    label = "Đến từ",
+                    value = authState.userHometown ?: "Chưa cập nhật"
+                )
+                
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                DetailItem(
+                    icon = Icons.Default.Cake,
+                    label = "Năm sinh",
+                    value = authState.userBirthYear?.toString() ?: "Chưa cập nhật"
+                )
+            }
+            
+            Spacer(modifier = Modifier.weight(1f))
+        }
+        
+        // Edit Name Dialog
+        if (showEditNameDialog) {
+            EditNameDialog(
+                currentName = userName,
+                onDismiss = { showEditNameDialog = false },
+                onSave = { newName ->
+                    scope.launch {
+                        authViewModel.updateFullName(newName)
+                        showEditNameDialog = false
+                    }
+                }
+            )
+        }
+    }
+    
+    // Edit Profile Dialog
+    if (showEditDialog) {
+        EditProfileDialog(
+            authViewModel = authViewModel,
+            onDismiss = { showEditDialog = false }
+        )
+    }
+    
+    // Avatar Options Bottom Sheet
+    if (showAvatarOptionsSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showAvatarOptionsSheet = false },
+            containerColor = Color.White,
+            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    text = "Ảnh đại diện",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+                
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            showAvatarOptionsSheet = false
+                            profileImagePicker.launch("image/*")
+                        }
+                        .padding(vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
-                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.LocationOn, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(20.dp))
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(text = "Sống tại ", style = MaterialTheme.typography.bodyMedium)
-                            Text(text = authState.userLocation ?: "Chưa cập nhật", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                        }
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Place, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(20.dp))
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(text = "Đến từ ", style = MaterialTheme.typography.bodyMedium)
-                            Text(text = authState.userHometown ?: "Chưa cập nhật", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                        }
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Cake, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(20.dp))
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(text = "Năm sinh ", style = MaterialTheme.typography.bodyMedium)
-                            Text(text = authState.userBirthYear?.toString() ?: "Chưa cập nhật", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                    Icon(
+                        imageVector = Icons.Default.PhotoCamera,
+                        contentDescription = null,
+                        tint = Color(0xFF2196F3),
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text(
+                        text = "Tải lên ảnh",
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun DetailItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    value: String
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = Color(0xFFF5F5F5),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = Color(0xFF2196F3),
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Column {
+                Text(
+                    text = label,
+                    fontSize = 12.sp,
+                    color = Color.Gray
+                )
+                Text(
+                    text = value,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.Black
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun EditNameDialog(
+    currentName: String,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit
+) {
+    var name by remember { mutableStateOf(currentName) }
+    var isLoading by remember { mutableStateOf(false) }
+    
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = Color.White
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp)
+            ) {
+                Text(
+                    text = "Chỉnh sửa tên",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.Black
+                )
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Tên hiển thị") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color(0xFF2196F3),
+                        focusedLabelColor = Color(0xFF2196F3)
+                    )
+                )
+                
+                Spacer(modifier = Modifier.height(24.dp))
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("Hủy", color = Color.Gray)
+                    }
+                    
+                    Button(
+                        onClick = {
+                            if (name.isNotBlank()) {
+                                isLoading = true
+                                onSave(name.trim())
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF2196F3)
+                        ),
+                        enabled = name.isNotBlank() && !isLoading
+                    ) {
+                        if (isLoading) {
+                            CircularProgressIndicator(
+                                color = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        } else {
+                            Text("Lưu")
                         }
                     }
                 }
-
-                Spacer(modifier = Modifier.height(72.dp))
             }
         }
     }
@@ -356,3 +650,47 @@ fun EditProfileDialog(
     }
 }
 
+/**
+ * Upload avatar image to server.
+ * @return Relative path if successful, null if failed
+ */
+private suspend fun uploadAvatarToServer(context: Context, uri: Uri): String? {
+    return withContext(Dispatchers.IO) {
+        try {
+            // Get input stream from URI
+            val inputStream: InputStream = context.contentResolver.openInputStream(uri)
+                ?: throw Exception("Cannot read file")
+            
+            // Get content type
+            val contentType = context.contentResolver.getType(uri) ?: "image/jpeg"
+            
+            // Read bytes
+            val bytes = inputStream.use { it.readBytes() }
+            
+            // Create multipart body
+            val requestBody = bytes.toRequestBody(contentType.toMediaTypeOrNull())
+            val part = MultipartBody.Part.createFormData(
+                "file",
+                "avatar.${contentType.substringAfter("/")}",
+                requestBody
+            )
+            
+            // Get auth token
+            val prefs = context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
+            // Use DataStore approach if available, fallback to direct API call
+            val token = com.example.chatapp.data.local.AuthManager(context).getAccessTokenOnce()
+                ?: throw Exception("Not authenticated")
+            
+            // Upload
+            val response = ApiClient.apiService.uploadAvatar(
+                token = "Bearer $token",
+                file = part
+            )
+            
+            response.avatar  // Return relative path
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+}

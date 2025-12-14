@@ -283,7 +283,8 @@ data class AuthState(
     val userFriendCount: Int? = null,
     val userLocation: String? = null,
     val userHometown: String? = null,
-    val userBirthYear: Int? = null
+    val userBirthYear: Int? = null,
+    val userAvatar: String? = null  // Relative path: /static/avatars/xxx.jpg
 )
 
 class AuthViewModel(application: Application) : AndroidViewModel(application) {
@@ -329,7 +330,8 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             userFriendCount = user?.friendCount,
             userLocation = user?.location,
             userHometown = user?.hometown,
-            userBirthYear = user?.birthYear
+            userBirthYear = user?.birthYear,
+            userAvatar = user?.avatar
         )
     }
 
@@ -389,7 +391,8 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 userFriendCount = profile?.friendCount,
                 userLocation = profile?.location,
                 userHometown = profile?.hometown,
-                userBirthYear = profile?.birthYear
+                userBirthYear = profile?.birthYear,
+                userAvatar = profile?.avatar
             )
         }
     }
@@ -420,7 +423,8 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     userFriendCount = profile?.friendCount,
                     userLocation = profile?.location,
                     userHometown = profile?.hometown,
-                    userBirthYear = profile?.birthYear
+                    userBirthYear = profile?.birthYear,
+                    userAvatar = profile?.avatar
                 )
             } else {
                 logout()
@@ -449,7 +453,8 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     userFriendCount = profile?.friendCount ?: _authState.value.userFriendCount,
                     userLocation = profile?.location ?: _authState.value.userLocation,
                     userHometown = profile?.hometown ?: _authState.value.userHometown,
-                    userBirthYear = profile?.birthYear ?: _authState.value.userBirthYear
+                    userBirthYear = profile?.birthYear ?: _authState.value.userBirthYear,
+                    userAvatar = profile?.avatar ?: _authState.value.userAvatar
                 )
                 Result.success(Unit)
             } else {
@@ -491,7 +496,8 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     userLocation = user?.location ?: _authState.value.userLocation,
                     userHometown = user?.hometown ?: _authState.value.userHometown,
                     userBirthYear = user?.birthYear ?: _authState.value.userBirthYear,
-                    userFriendCount = user?.friendCount ?: _authState.value.userFriendCount
+                    userFriendCount = user?.friendCount ?: _authState.value.userFriendCount,
+                    userAvatar = user?.avatar ?: _authState.value.userAvatar
                 )
                 Result.success(Unit)
             } else {
@@ -509,5 +515,88 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         newPassword: String
     ): Result<Unit> {
         return repository.changePassword(oldPassword, newPassword)
+    }
+
+    /**
+     * Upload avatar image for current user.
+     * @param avatarPath Relative path returned from upload API
+     */
+    fun updateAvatarInState(avatarPath: String) {
+        _authState.value = _authState.value.copy(userAvatar = avatarPath)
+        // Persist to AuthManager
+        viewModelScope.launch {
+            authManager.saveUserAvatar(avatarPath)
+        }
+    }
+    
+    /**
+     * Update user's full name via API and update local state
+     * @param newName New full name to set
+     */
+    suspend fun updateFullName(newName: String): Result<Unit> {
+        return try {
+            val token = authManager.getAccessTokenOnce()
+                ?: return Result.failure(Exception("Not authenticated"))
+            
+            // Call API to update profile with new name
+            val response = ApiClient.apiService.updateProfile(
+                token = "Bearer $token",
+                body = com.example.chatapp.data.remote.model.ProfileUpdateRequest(fullName = newName)
+            )
+            
+            // Update local state
+            _authState.value = _authState.value.copy(userFullName = response.fullName ?: newName)
+            
+            // Persist to AuthManager - use existing values for id and role
+            authManager.saveUserProfile(
+                id = _authState.value.userId,
+                email = _authState.value.userEmail,
+                fullName = response.fullName ?: newName,
+                role = _authState.value.userRole,
+                avatar = _authState.value.userAvatar
+            )
+            
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+    
+    /**
+     * Refresh user profile from API
+     * Call this after actions that change profile data (like unfriend)
+     */
+    fun refreshProfile() {
+        viewModelScope.launch {
+            try {
+                val token = authManager.getAccessTokenOnce() ?: return@launch
+                val profile = ApiClient.apiService.getProfile("Bearer $token")
+                
+                // Update local state with fresh data
+                _authState.value = _authState.value.copy(
+                    userFriendCount = profile.friendCount,
+                    userFullName = profile.fullName,
+                    userLocation = profile.location,
+                    userHometown = profile.hometown,
+                    userBirthYear = profile.birthYear,
+                    userAvatar = profile.avatar
+                )
+                
+                // Persist to AuthManager
+                authManager.saveUserProfile(
+                    id = _authState.value.userId,
+                    email = _authState.value.userEmail,
+                    fullName = profile.fullName,
+                    role = _authState.value.userRole,
+                    avatar = profile.avatar,
+                    location = profile.location,
+                    hometown = profile.hometown,
+                    birthYear = profile.birthYear,
+                    friendCount = profile.friendCount
+                )
+            } catch (e: Exception) {
+                // Silently fail - profile refresh is not critical
+            }
+        }
     }
 }

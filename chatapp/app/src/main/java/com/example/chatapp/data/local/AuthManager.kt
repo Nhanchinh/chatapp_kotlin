@@ -34,6 +34,7 @@ class AuthManager(private val context: Context) {
         private val USER_LOCATION_KEY = stringPreferencesKey("user_location")
         private val USER_HOMETOWN_KEY = stringPreferencesKey("user_hometown")
         private val USER_BIRTH_YEAR_KEY = stringPreferencesKey("user_birth_year")
+        private val USER_AVATAR_KEY = stringPreferencesKey("user_avatar")  // Relative path to avatar
     }
 
     private val refreshMutex = Mutex()
@@ -102,6 +103,10 @@ class AuthManager(private val context: Context) {
         preferences[USER_BIRTH_YEAR_KEY]
     }
 
+    val userAvatar: Flow<String?> = context.dataStore.data.map { preferences ->
+        preferences[USER_AVATAR_KEY]
+    }
+
     /**
      * Save access token and set login state to true
      */
@@ -162,7 +167,8 @@ class AuthManager(private val context: Context) {
         friendCount: Int? = null,
         location: String? = null,
         hometown: String? = null,
-        birthYear: Int? = null
+        birthYear: Int? = null,
+        avatar: String? = null
     ) {
         context.dataStore.edit { preferences ->
             id?.let { preferences[USER_ID_KEY] = it }
@@ -173,6 +179,16 @@ class AuthManager(private val context: Context) {
             location?.let { preferences[USER_LOCATION_KEY] = it }
             hometown?.let { preferences[USER_HOMETOWN_KEY] = it }
             birthYear?.let { preferences[USER_BIRTH_YEAR_KEY] = it.toString() }
+            avatar?.let { preferences[USER_AVATAR_KEY] = it }
+        }
+    }
+
+    /**
+     * Save user avatar path (relative path only)
+     */
+    suspend fun saveUserAvatar(avatarPath: String) {
+        context.dataStore.edit { preferences ->
+            preferences[USER_AVATAR_KEY] = avatarPath
         }
     }
 
@@ -197,6 +213,7 @@ class AuthManager(private val context: Context) {
             preferences.remove(USER_LOCATION_KEY)
             preferences.remove(USER_HOMETOWN_KEY)
             preferences.remove(USER_BIRTH_YEAR_KEY)
+            preferences.remove(USER_AVATAR_KEY)
         }
     }
 
@@ -279,6 +296,7 @@ class AuthManager(private val context: Context) {
         val location = userLocation.first()
         val hometown = userHometown.first()
         val birthYear = userBirthYear.first()?.toIntOrNull()
+        val avatar = userAvatar.first()
         return if (id != null || email != null || fullName != null || role != null) {
             UserProfileLocal(
                 id = id,
@@ -288,7 +306,8 @@ class AuthManager(private val context: Context) {
                 friendCount = friendCount,
                 location = location,
                 hometown = hometown,
-                birthYear = birthYear
+                birthYear = birthYear,
+                avatar = avatar
             )
         } else null
     }
@@ -309,6 +328,7 @@ data class UserProfileLocal(
     val friendCount: Int?,
     val location: String?,
     val hometown: String?,
-    val birthYear: Int?
+    val birthYear: Int?,
+    val avatar: String? = null  // Relative path: /static/avatars/xxx.jpg
 )
 

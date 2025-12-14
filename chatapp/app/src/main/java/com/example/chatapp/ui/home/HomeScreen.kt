@@ -41,6 +41,11 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
+import com.example.chatapp.utils.UrlHelper
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -327,6 +332,7 @@ fun HomeScreen(
                                         StoryAvatar(
                                             name = friendName,
                                             online = friend.isOnline ?: false,
+                                            avatar = friend.avatar,  // Display friend's avatar
                                             onClick = {
                                                 query = ""
                                                 navController?.navigate(
@@ -425,18 +431,25 @@ fun HomeScreen(
                                     
                                     items(filtered) { conversation ->
                                         val contactId = conversation.participants.firstOrNull { it != myUserId } ?: conversation.name
+                                        // Helper function to detect if name is a user ID (MongoDB ObjectId format)
+                                        val displayName = if (conversation.name.matches(Regex("^[a-f0-9]{24}$"))) {
+                                            "Người Lạ"
+                                        } else {
+                                            conversation.name
+                                        }
                                         ConversationItem(
-                                            name = conversation.name,
+                                            name = displayName,
                                             lastMessage = conversation.lastMessage,
                                             time = conversation.lastTime,
                                             isOnline = conversation.isOnline,
                                             unreadCount = conversation.unreadCount,
+                                            avatar = conversation.avatar,  // Display user avatar
                                             onClick = {
                                                 query = ""
                                                 navController?.navigate(
                                                     NavRoutes.Chat.createRoute(
                                                 contactId = contactId,
-                                                contactName = conversation.name,
+                                                contactName = displayName,
                                                 conversationId = conversation.id,
                                                 isGroup = conversation.isGroup
                                                     )
@@ -454,6 +467,7 @@ fun HomeScreen(
                     ContactsScreen(
                         navController = navController, 
                         chatViewModel = chatViewModel,
+                        authViewModel = authViewModel,
                         onFriendRequestsCountChange = { count -> friendRequestsCount = count }
                     )
                 }
@@ -536,14 +550,27 @@ fun HomeScreen(
                             Box(
                                 modifier = Modifier
                                     .size(40.dp)
-                                    .background(Color(0xFF667EEA), shape = RoundedCornerShape(12.dp)),
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF667EEA)),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(
-                                    text = friendName.take(1).uppercase(),
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                val avatarUrl = UrlHelper.avatar(friend.avatar)
+                                if (avatarUrl != null) {
+                                    AsyncImage(
+                                        model = avatarUrl,
+                                        contentDescription = "Avatar",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier
+                                            .size(40.dp)
+                                            .clip(CircleShape)
+                                    )
+                                } else {
+                                    Text(
+                                        text = friendName.take(1).uppercase(),
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(friendName, fontWeight = FontWeight.Medium)

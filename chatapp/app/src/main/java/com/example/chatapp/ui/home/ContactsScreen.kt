@@ -33,6 +33,12 @@ import com.example.chatapp.viewmodel.ChatViewModel
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 import retrofit2.HttpException
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
+import com.example.chatapp.utils.UrlHelper
+import androidx.compose.foundation.clickable
+import android.net.Uri
+import com.example.chatapp.viewmodel.AuthViewModel
 
 private enum class ContactsTab {
     FRIENDS,
@@ -46,6 +52,7 @@ private enum class ContactsSearchMode { FRIENDS, USERS }
 fun ContactsScreen(
     navController: NavController? = null,
     chatViewModel: ChatViewModel? = null,
+    authViewModel: AuthViewModel? = null,
     onFriendRequestsCountChange: (Int) -> Unit = {}
 ) {
     var selectedTab by remember { mutableStateOf(ContactsTab.FRIENDS) }
@@ -169,6 +176,7 @@ fun ContactsScreen(
         when (selectedTab) {
             ContactsTab.FRIENDS -> {
                 FriendsListTabContent(
+                    authViewModel = authViewModel,
                     onMessageClick = { friendId, friendName ->
                         navController?.navigate(
                             NavRoutes.Chat.createRoute(
@@ -177,6 +185,10 @@ fun ContactsScreen(
                                 conversationId = null
                             )
                         )
+                    },
+                    onAvatarClick = { friendId ->
+                        val encodedUserId = Uri.encode(friendId)
+                        navController?.navigate("otherprofile/$encodedUserId")
                     }
                 )
             }
@@ -194,7 +206,9 @@ fun ContactsScreen(
 
 @Composable
 private fun FriendsListTabContent(
-    onMessageClick: (String, String) -> Unit
+    authViewModel: AuthViewModel? = null,
+    onMessageClick: (String, String) -> Unit,
+    onAvatarClick: (String) -> Unit = {}
 ) {
     var friends by remember { mutableStateOf(listOf<Friend>()) }
     var isLoadingFriends by remember { mutableStateOf(true) }
@@ -265,6 +279,7 @@ private fun FriendsListTabContent(
                     Friend(
                         id = u.id ?: "",
                         name = u.fullName ?: (u.email ?: ""),
+                        profileImage = u.avatar,
                         mutualFriends = u.friendCount ?: 0,
                         isOnline = u.isOnline ?: false,
                         lastSeen = u.lastSeen?.let { formatLastSeen(it) }
@@ -410,6 +425,12 @@ private fun FriendsListTabContent(
                         user = u,
                         isAdding = addingUserId == (u.id ?: ""),
                         invited = invitedIds.contains(u.id ?: ""),
+                        onAvatarClick = {
+                            u.id?.let { userId ->
+                                val encodedUserId = Uri.encode(userId)
+                                onAvatarClick(userId)
+                            }
+                        },
                         onAddClick = {
                             val targetId = u.id
                             if (targetId != null) {
@@ -487,6 +508,7 @@ private fun FriendsListTabContent(
                     ContactsFriendListItem(
                         friend = friend,
                         onMessageClick = { onMessageClick(friend.id, friend.name) },
+                        onAvatarClick = { onAvatarClick(friend.id) },
                         onUnfriend = {
                             unfriendingId = friend.id
                             scope.launch {
@@ -496,6 +518,8 @@ private fun FriendsListTabContent(
                                     if (token != null) {
                                         ApiClient.apiService.unfriend("Bearer $token", friendId = friend.id)
                                         friends = friends.filter { it.id != friend.id }
+                                        // Refresh profile to update friend count
+                                        authViewModel?.refreshProfile()
                                     }
                                 } catch (_: Exception) {
                                 } finally {
@@ -625,6 +649,7 @@ private fun FriendRequestsTabContent(
 private fun ContactsFriendListItem(
     friend: Friend,
     onMessageClick: () -> Unit,
+    onAvatarClick: () -> Unit = {},
     onUnfriend: () -> Unit,
     isUnfriending: Boolean = false
 ) {
@@ -643,8 +668,8 @@ private fun ContactsFriendListItem(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Avatar
-            Box(modifier = Modifier.size(56.dp)) {
+            // Avatar - clickable to navigate to profile
+            Box(modifier = Modifier.size(56.dp).clickable { onAvatarClick() }) {
                 Box(
                     modifier = Modifier
                         .size(56.dp)
@@ -652,12 +677,24 @@ private fun ContactsFriendListItem(
                         .background(Color(friend.avatarColor)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = friend.name.firstOrNull()?.uppercase() ?: "?",
-                        color = Color.White,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
+                    val avatarUrl = UrlHelper.avatar(friend.profileImage)
+                    if (avatarUrl != null) {
+                        AsyncImage(
+                            model = avatarUrl,
+                            contentDescription = "Avatar",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                        )
+                    } else {
+                        Text(
+                            text = friend.name.firstOrNull()?.uppercase() ?: "?",
+                            color = Color.White,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
                 if (friend.isOnline || (friend.lastSeen != null && !friend.isOnline)) {
                     Box(
@@ -690,7 +727,7 @@ private fun ContactsFriendListItem(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "${friend.mutualFriends} bạn chung",
+                    text = "${friend.mutualFriends} bạn bè",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.Gray
                 )
@@ -750,6 +787,7 @@ private fun ContactsUserSearchItem(
     user: UserDto,
     isAdding: Boolean = false,
     invited: Boolean = false,
+    onAvatarClick: () -> Unit = {},
     onAddClick: () -> Unit
 ) {
     Card(
@@ -765,19 +803,33 @@ private fun ContactsUserSearchItem(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Avatar - clickable to view profile
             Box(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(CircleShape)
-                    .background(Color(0xFF90CAF9)),
+                    .background(Color(0xFF90CAF9))
+                    .clickable { onAvatarClick() },
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = (user.fullName ?: user.email ?: "?").firstOrNull()?.uppercase() ?: "?",
-                    color = Color.White,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Bold
-                )
+                val avatarUrl = UrlHelper.avatar(user.avatar)
+                if (avatarUrl != null) {
+                    AsyncImage(
+                        model = avatarUrl,
+                        contentDescription = "Avatar",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                    )
+                } else {
+                    Text(
+                        text = (user.fullName ?: user.email ?: "?").firstOrNull()?.uppercase() ?: "?",
+                        color = Color.White,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {

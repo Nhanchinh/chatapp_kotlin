@@ -7,6 +7,7 @@ data class Message(
     val isFromMe: Boolean,
     val senderName: String? = null,
     val senderId: String? = null,
+    val senderAvatar: String? = null,  // Relative path to sender's avatar
     val receiverId: String? = null,
     val conversationId: String? = null,
     val delivered: Boolean = false,
