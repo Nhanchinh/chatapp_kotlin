@@ -219,6 +219,13 @@ fun ContactInfoScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .clickable {
+                            android.widget.Toast.makeText(
+                                context,
+                                "Tính năng hiện chưa được phát triển",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        }
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
