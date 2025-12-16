@@ -44,6 +44,9 @@ import com.example.chatapp.data.remote.model.ZegoTokenResponse
 import com.example.chatapp.data.remote.model.NotificationsResponse
 import com.example.chatapp.data.remote.model.NotificationCountResponse
 import com.example.chatapp.data.remote.model.NotificationActionResponse
+import com.example.chatapp.data.remote.model.CreateBackupRequest
+import com.example.chatapp.data.remote.model.GetBackupResponse
+import com.example.chatapp.data.remote.model.BackupExistsResponse
 import com.squareup.moshi.Json
 import okhttp3.MultipartBody
 import retrofit2.http.Body
@@ -368,6 +371,28 @@ interface ApiService {
     suspend fun getUnreadNotificationCount(
         @Header("Authorization") token: String
     ): NotificationCountResponse
+
+    // Key Backup API
+    @POST("key-backup")
+    suspend fun createKeyBackup(
+        @Header("Authorization") token: String,
+        @Body request: CreateBackupRequest
+    ): SimpleMessageResponse
+
+    @GET("key-backup")
+    suspend fun getKeyBackup(
+        @Header("Authorization") token: String
+    ): GetBackupResponse
+
+    @GET("key-backup/exists")
+    suspend fun checkKeyBackupExists(
+        @Header("Authorization") token: String
+    ): BackupExistsResponse
+
+    @DELETE("key-backup")
+    suspend fun deleteKeyBackup(
+        @Header("Authorization") token: String
+    ): SimpleMessageResponse
 
 }
 

@@ -53,6 +53,7 @@ sealed class NavRoutes(val route: String) {
     data object Settings : NavRoutes("settings")
     data object QRCodeScanner : NavRoutes("qr-scanner")
     data object MyQRCode : NavRoutes("my-qr-code")
+    data object KeyBackup : NavRoutes("key-backup")
 }
 
 

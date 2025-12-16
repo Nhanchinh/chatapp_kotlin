@@ -167,3 +167,25 @@ data class ChangePasswordRequest(
     @Json(name = "old_password") val oldPassword: String,
     @Json(name = "new_password") val newPassword: String
 )
+
+// ========== Key Backup Models ==========
+
+data class CreateBackupRequest(
+    @Json(name = "encrypted_backup") val encryptedBackup: String,
+    val salt: String,
+    val iv: String,
+    @Json(name = "conversation_ids") val conversationIds: List<String>
+)
+
+data class GetBackupResponse(
+    @Json(name = "encrypted_backup") val encryptedBackup: String,
+    val salt: String,
+    val iv: String,
+    @Json(name = "conversation_ids") val conversationIds: List<String>,
+    @Json(name = "updated_at") val updatedAt: String
+)
+
+data class BackupExistsResponse(
+    val exists: Boolean,
+    @Json(name = "conversation_count") val conversationCount: Int
+)

@@ -40,6 +40,7 @@ import androidx.compose.ui.platform.LocalContext
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    onNavigateToBackup: () -> Unit = {},
     authViewModel: AuthViewModel
 ) {
     val context = LocalContext.current
@@ -247,6 +248,39 @@ fun SettingsScreen(
                                 settingsManager.setE2EEEnabled(enabled)
                             }
                         }
+                    )
+                }
+                
+                // Sao lưu tin nhắn
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onNavigateToBackup() }
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.CloudUpload,
+                        contentDescription = null,
+                        tint = Color(0xFF2196F3),
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Sao lưu tin nhắn",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Text(
+                            text = "Sao lưu khóa để khôi phục tin nhắn",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray
+                        )
+                    }
+                    Icon(
+                        Icons.Default.ChevronRight,
+                        contentDescription = null,
+                        tint = Color.Gray
                     )
                 }
                 

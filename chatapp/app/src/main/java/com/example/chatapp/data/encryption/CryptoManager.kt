@@ -169,6 +169,76 @@ object CryptoManager {
         val keyBytes = Base64.decode(secretKeyBase64, Base64.NO_WRAP)
         return SecretKeySpec(keyBytes, "AES")
     }
+    
+    // ========== PIN-based Key Derivation (for Backup) ==========
+    
+    private const val PBKDF2_ITERATIONS = 100_000
+    private const val PBKDF2_KEY_LENGTH = 256 // bits
+    private const val SALT_SIZE = 16 // bytes
+    
+    /**
+     * Generate random salt for PBKDF2
+     */
+    fun generateSalt(): ByteArray {
+        val salt = ByteArray(SALT_SIZE)
+        SecureRandom().nextBytes(salt)
+        return salt
+    }
+    
+    /**
+     * Derive AES-256 key from PIN using PBKDF2
+     * @param pin User's backup PIN
+     * @param salt Random salt (16 bytes)
+     * @return AES-256 SecretKey
+     */
+    fun deriveKeyFromPin(pin: String, salt: ByteArray): SecretKey {
+        val factory = javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+        val spec = javax.crypto.spec.PBEKeySpec(
+            pin.toCharArray(),
+            salt,
+            PBKDF2_ITERATIONS,
+            PBKDF2_KEY_LENGTH
+        )
+        val tmp = factory.generateSecret(spec)
+        return SecretKeySpec(tmp.encoded, "AES")
+    }
+    
+    /**
+     * Encrypt data with PIN-derived key
+     * @param plaintext Data to encrypt (JSON string)
+     * @param pin User's PIN
+     * @return Triple of (encryptedData, salt, iv) all Base64-encoded
+     */
+    fun encryptWithPin(plaintext: String, pin: String): Triple<String, String, String> {
+        val salt = generateSalt()
+        val key = deriveKeyFromPin(pin, salt)
+        val encrypted = aesEncrypt(plaintext, key)
+        return Triple(
+            encrypted.ciphertext,
+            Base64.encodeToString(salt, Base64.NO_WRAP),
+            encrypted.iv
+        )
+    }
+    
+    /**
+     * Decrypt data with PIN-derived key
+     * @param ciphertextBase64 Encrypted data (Base64)
+     * @param saltBase64 Salt used during encryption (Base64)
+     * @param ivBase64 IV used during encryption (Base64)
+     * @param pin User's PIN
+     * @return Decrypted plaintext
+     * @throws Exception if decryption fails (wrong PIN)
+     */
+    fun decryptWithPin(
+        ciphertextBase64: String,
+        saltBase64: String,
+        ivBase64: String,
+        pin: String
+    ): String {
+        val salt = Base64.decode(saltBase64, Base64.NO_WRAP)
+        val key = deriveKeyFromPin(pin, salt)
+        return aesDecrypt(ciphertextBase64, ivBase64, key)
+    }
 }
 
 /**

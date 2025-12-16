@@ -424,5 +424,35 @@ class KeyManager(private val context: Context) {
                     encryptedPrefs.contains(sessionKeyPref(userId, conversationId))
         }
     }
+    
+    /**
+     * Get all session keys for the active user (for backup)
+     * Returns a map of conversationId -> Base64-encoded session key
+     */
+    suspend fun getAllSessionKeys(): Map<String, String> {
+        val userId = getActiveUserId() ?: return emptyMap()
+        val sessionPrefix = "session_key_${userId}_"
+        
+        return sessionKeyCacheMutex.withLock {
+            val result = mutableMapOf<String, String>()
+            
+            for ((key, value) in encryptedPrefs.all) {
+                if (key.startsWith(sessionPrefix) && value is String) {
+                    // Extract conversation ID from key
+                    val conversationId = key.removePrefix(sessionPrefix)
+                    result[conversationId] = value
+                }
+            }
+            
+            result
+        }
+    }
+    
+    /**
+     * Get list of conversation IDs that have session keys
+     */
+    suspend fun getBackedUpConversationIds(): List<String> {
+        return getAllSessionKeys().keys.toList()
+    }
 }
 

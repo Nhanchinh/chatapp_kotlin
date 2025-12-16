@@ -21,6 +21,7 @@ import com.example.chatapp.ui.profile.UserProfileScreen
 import com.example.chatapp.ui.qrcode.MyQRCodeScreen
 import com.example.chatapp.ui.qrcode.QRCodeScannerScreen
 import com.example.chatapp.ui.settings.SettingsScreen
+import com.example.chatapp.ui.backup.KeyBackupScreen
 import com.example.chatapp.viewmodel.AuthViewModel
 import com.example.chatapp.viewmodel.ChatViewModel
 
@@ -268,7 +269,10 @@ fun AppNavGraph(
         composable(NavRoutes.Settings.route) {
             SettingsScreen(
                 authViewModel = authViewModel,
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onNavigateToBackup = {
+                    navController.navigate(NavRoutes.KeyBackup.route)
+                }
             )
         }
         composable(NavRoutes.QRCodeScanner.route) {
@@ -279,6 +283,11 @@ fun AppNavGraph(
         composable(NavRoutes.MyQRCode.route) {
             MyQRCodeScreen(
                 navController = navController
+            )
+        }
+        composable(NavRoutes.KeyBackup.route) {
+            KeyBackupScreen(
+                onBack = { navController.popBackStack() }
             )
         }
     }
