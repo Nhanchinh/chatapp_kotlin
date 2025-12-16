@@ -18,7 +18,7 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Base URL: backend on LAN IP (physical device on same network)
-        buildConfigField("String", "BASE_URL", "\"http://192.168.1.194:8000/" +
+        buildConfigField("String", "BASE_URL", "\"https://818eda87b210.ngrok-free.app/" +
                 "\"")
         // Zego config - AppID/AppSign from Zego Dashboard
         buildConfigField("long", "ZEGO_APP_ID", "2014683924L")

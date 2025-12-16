@@ -156,6 +156,8 @@ fun ChatScreen(
 ) {
     val messages by chatViewModel.messages.collectAsStateWithLifecycle()
     val isLoading by chatViewModel.messagesLoading.collectAsStateWithLifecycle()
+    val loadingMoreMessages by chatViewModel.loadingMoreMessages.collectAsStateWithLifecycle()
+    val nextCursor by chatViewModel.nextCursor.collectAsStateWithLifecycle()
     val typingUsers by chatViewModel.typingUsers.collectAsStateWithLifecycle()
     val errorMessage by chatViewModel.messagesError.collectAsStateWithLifecycle()
     val conversations by chatViewModel.conversations.collectAsStateWithLifecycle()
@@ -165,7 +167,6 @@ fun ChatScreen(
     var isTextFieldFocused by remember { mutableStateOf(false) }
     var lastMessageCount by remember { mutableStateOf(0) }
     var isInitialLoad by remember { mutableStateOf(true) }
-    var isRefreshing by remember { mutableStateOf(false) }
     var messageToDelete by remember { mutableStateOf<Message?>(null) }  // Message to delete (for confirmation dialog)
     var replyingToMessage by remember { mutableStateOf<Message?>(null) }  // Message being replied to
     var showMessageActions by remember { mutableStateOf<Message?>(null) }  // Show action menu for message
@@ -292,30 +293,19 @@ fun ChatScreen(
         }
     }
     
-    // Nested scroll connection to detect pull-to-refresh
+    // Nested scroll connection to detect scroll up and load more messages
     val nestedScrollConnection = remember {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                // Check if we're at the top and pulling down (available.y > 0 means pulling down)
-                val isAtTop = listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
-                if (isAtTop && available.y > 0 && !isRefreshing && !isLoading) {
-                    // User is pulling down from top - trigger refresh
-                    isRefreshing = true
-                    scope.launch {
-                        // Refresh messages by reopening conversation
-                        chatViewModel.openConversation(conversationId, contactId, contactName)
-                    }
+                // available.y < 0 means scrolling up (pulling content down)
+                // Check if we're near the top and scrolling up to load more messages
+                val isNearTop = listState.firstVisibleItemIndex <= 3
+                if (isNearTop && available.y < 0 && !loadingMoreMessages && !isLoading && nextCursor != null) {
+                    // User is scrolling up near the top - load more messages
+                    chatViewModel.loadMoreMessages()
                 }
                 return Offset.Zero
             }
-        }
-    }
-    
-    // End refresh when loading completes
-    LaunchedEffect(isLoading) {
-        if (isRefreshing && !isLoading) {
-            delay(300) // Small delay to ensure UI updates
-            isRefreshing = false
         }
     }
 
@@ -545,8 +535,8 @@ fun ChatScreen(
                         ),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // Pull to refresh indicator
-                        if (isRefreshing) {
+                        // Loading more messages indicator (at the top)
+                        if (loadingMoreMessages) {
                             item {
                                 Box(
                                     modifier = Modifier

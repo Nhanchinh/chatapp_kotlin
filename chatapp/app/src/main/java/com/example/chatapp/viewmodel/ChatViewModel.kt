@@ -58,6 +58,12 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val _messagesError = MutableStateFlow<String?>(null)
     val messagesError: StateFlow<String?> = _messagesError.asStateFlow()
 
+    private val _nextCursor = MutableStateFlow<String?>(null)
+    val nextCursor: StateFlow<String?> = _nextCursor.asStateFlow()
+
+    private val _loadingMoreMessages = MutableStateFlow(false)
+    val loadingMoreMessages: StateFlow<Boolean> = _loadingMoreMessages.asStateFlow()
+
     private val _currentConversationId = MutableStateFlow<String?>(null)
     val currentConversationId: StateFlow<String?> = _currentConversationId.asStateFlow()
     private val _currentConversationIsGroup = MutableStateFlow(false)
@@ -602,6 +608,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _messagesLoading.value = true
             _messagesError.value = null
+            // Reset nextCursor khi load mới (không phải load more)
+            if (cursor == null) {
+                _nextCursor.value = null
+            }
             // Ensure friends map is loaded for name resolution
             val friends = friendsMap.value
             repository.getMessages(conversationId, limit, cursor).fold(
@@ -676,6 +686,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         )
                     }
                     _messages.value = mappedMessages
+                    _nextCursor.value = response.nextCursor  // Lưu nextCursor để load more
                     scheduleMediaDownloads(mappedMessages)
                     
                     // **AUTO-FIX**: If we have encrypted messages but failed to decrypt, 
@@ -731,7 +742,94 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 },
                 onFailure = { error ->
                     _messagesLoading.value = false
-                    _messagesError.value = error.message
+                    _messagesError.value = error.message ?: "Lỗi không xác định"
+                }
+            )
+        }
+    }
+
+    fun loadMoreMessages() {
+        val conversationId = _currentConversationId.value
+        val cursor = _nextCursor.value
+        
+        // Chỉ load more nếu có conversationId và cursor
+        if (conversationId == null || cursor == null || _loadingMoreMessages.value) {
+            return
+        }
+        
+        viewModelScope.launch {
+            _loadingMoreMessages.value = true
+            _messagesError.value = null
+            val friends = friendsMap.value
+            val me = currentUserId.value
+            
+            repository.getMessages(conversationId, limit = 50, cursor = cursor).fold(
+                onSuccess = { response ->
+                    val mappedMessages = response.items.map { dto ->
+                        val isMediaMessage = dto.mediaId != null
+                        val isVoice = dto.mediaMimeType?.startsWith("audio/") == true
+                        val baseText = if (isMediaMessage) {
+                            if (dto.senderId == me) {
+                                if (isVoice) "[Bạn đã gửi một voice]" else "[Bạn đã gửi một ảnh]"
+                            } else {
+                                if (isVoice) "[Đã gửi một voice]" else "[Đã gửi một ảnh]"
+                            }
+                        } else {
+                            dto.content
+                        }
+
+                        val displayText = if (dto.deleted) {
+                            "Tin nhắn đã bị thu hồi"
+                        } else if (dto.isEncrypted && dto.iv != null) {
+                            repository.decryptMessage(dto.content, dto.iv, conversationId) ?: "[Không thể giải mã]"
+                        } else {
+                            baseText
+                        }
+                        
+                        val senderDisplayName = friends[dto.senderId] ?: dto.senderId
+                        val mediaStatus = when {
+                            dto.mediaId == null -> MediaStatus.NONE
+                            dto.senderId == me -> MediaStatus.READY
+                            else -> MediaStatus.DOWNLOADING
+                        }
+                        val localMediaPath = dto.mediaId?.let { repository.getCachedMediaPath(it) }
+                        Message(
+                            id = dto.id,
+                            text = displayText,
+                            timestamp = parseTimestamp(dto.timestamp),
+                            isFromMe = dto.senderId == me,
+                            senderName = senderDisplayName,
+                            senderId = dto.senderId,
+                            senderAvatar = dto.senderAvatar,
+                            receiverId = dto.receiverId,
+                            conversationId = dto.conversationId,
+                            delivered = dto.delivered,
+                            seen = dto.seen,
+                            clientMessageId = dto.clientMessageId,
+                            mediaId = dto.mediaId,
+                            mediaMimeType = dto.mediaMimeType,
+                            mediaSize = dto.mediaSize,
+                            mediaLocalPath = localMediaPath,
+                            mediaStatus = mediaStatus,
+                            mediaDuration = dto.mediaDuration,
+                            deleted = dto.deleted,
+                            replyTo = dto.replyTo,
+                            reactions = dto.reactions,
+                            messageType = dto.messageType
+                        )
+                    }
+                    
+                    // Append messages cũ vào đầu danh sách (không replace)
+                    val currentMessages = _messages.value
+                    _messages.value = mappedMessages + currentMessages
+                    _nextCursor.value = response.nextCursor
+                    scheduleMediaDownloads(mappedMessages)
+                    
+                    _loadingMoreMessages.value = false
+                },
+                onFailure = { error ->
+                    _loadingMoreMessages.value = false
+                    _messagesError.value = error.message ?: "Lỗi không xác định"
                 }
             )
         }
