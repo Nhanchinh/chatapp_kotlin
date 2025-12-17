@@ -689,52 +689,24 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     _nextCursor.value = response.nextCursor  // Lưu nextCursor để load more
                     scheduleMediaDownloads(mappedMessages)
                     
-                    // **AUTO-FIX**: If we have encrypted messages but failed to decrypt, 
-                    // setup encryption (this handles case where peer created key but we don't have it)
-                    // Only attempt once per conversation to avoid infinite loop
+                    // **DECRYPT FAILED HANDLING**: If we have encrypted messages but failed to decrypt,
+                    // this likely means the user is on a new device or key mismatch.
+                    // 
+                    // **CRITICAL**: DO NOT AUTO-DELETE KEYS! This causes PERMANENT DATA LOSS!
+                    // Instead, suggest user to restore from backup.
+                    //
+                    // Only log warning once per conversation
                     if (hasEncryptedMessages && failedToDecrypt && !autoSetupAttempted.contains(conversationId)) {
-                        android.util.Log.w("ChatViewModel", "Detected encrypted messages but missing key! Auto-setup encryption...")
-                        android.util.Log.w("ChatViewModel", "This may be due to outdated key (encrypted with old public key)")
-                        autoSetupAttempted.add(conversationId) // Mark as attempted
+                        android.util.Log.e("ChatViewModel", "⚠️ CRITICAL: Cannot decrypt messages for conversation $conversationId")
+                        android.util.Log.e("ChatViewModel", "Key on server may be encrypted with different public key (old device)")
+                        android.util.Log.e("ChatViewModel", "SOLUTION: User should restore key backup from Settings > Sao lưu tin nhắn")
+                        autoSetupAttempted.add(conversationId) // Mark as attempted to avoid spam
                         
-                        val contactId = _currentContactId.value
-                        if (me != null && contactId != null) {
-                            viewModelScope.launch {
-                                // First, try to delete outdated key (if any)
-                                android.util.Log.d("ChatViewModel", "Attempting to delete outdated conversation key...")
-                                repository.deleteOutdatedConversationKey(conversationId).fold(
-                                    onSuccess = { deleted ->
-                                        if (deleted) {
-                                            android.util.Log.d("ChatViewModel", "✅ Deleted outdated key, now will setup new encryption")
-                                        } else {
-                                            android.util.Log.w("ChatViewModel", "Could not delete outdated key (may not exist)")
-                                        }
-                                    },
-                                    onFailure = { error ->
-                                        android.util.Log.w("ChatViewModel", "Error deleting outdated key: ${error.message}")
-                                    }
-                                )
-                                
-                                // Now setup encryption (will fetch existing key or create new one)
-                                val participants = listOf(me, contactId)
-                                repository.setupConversationEncryption(conversationId, participants).fold(
-                                    onSuccess = { success ->
-                                        if (success) {
-                                            android.util.Log.d("ChatViewModel", "Auto-setup encryption successful! Reloading messages...")
-                                            // Reload messages to decrypt them with new key
-                                            kotlinx.coroutines.delay(500)
-                                            loadMessages(conversationId, limit, cursor)
-                                        } else {
-                                            android.util.Log.w("ChatViewModel", "Auto-setup returned false")
-                                            android.util.Log.w("ChatViewModel", "SOLUTION: Delete this conversation and create a new one")
-                                        }
-                                    },
-                                    onFailure = { error ->
-                                        android.util.Log.e("ChatViewModel", "Auto-setup encryption failed: ${error.message}")
-                                    }
-                                )
-                            }
-                        }
+                        // Set a user-friendly error message
+                        _messagesError.value = "Không thể giải mã tin nhắn. Vui lòng khôi phục khóa từ Cài đặt > Sao lưu tin nhắn"
+                        
+                        // **DO NOT DELETE KEY OR CREATE NEW KEY!**
+                        // The old key is still valuable - user can restore from backup
                     }
                     
                     _messagesLoading.value = false

@@ -41,9 +41,10 @@ class KeyBackupManager(context: Context) {
     /**
      * Export all conversation keys and encrypt with PIN
      * @param pin User's backup PIN (6 digits recommended)
+     * @param token Authentication token (needed to verify which conversations exist)
      * @return BackupData or null if failed
      */
-    suspend fun createBackup(pin: String): BackupData? = withContext(Dispatchers.IO) {
+    suspend fun createBackup(pin: String, token: String? = null): BackupData? = withContext(Dispatchers.IO) {
         try {
             Log.d(TAG, "Creating key backup...")
             
@@ -55,11 +56,24 @@ class KeyBackupManager(context: Context) {
                 return@withContext null
             }
             
-            val conversationIds = keysJson.keys().asSequence().toList()
-            Log.d(TAG, "Found ${conversationIds.size} conversation keys to backup")
+            // Filter out keys for deleted conversations if token is provided
+            val filteredKeysJson = if (token != null) {
+                filterKeysForExistingConversations(keysJson, token)
+            } else {
+                keysJson
+            }
+            
+            val conversationIds = filteredKeysJson.keys().asSequence().toList()
+            
+            if (conversationIds.isEmpty()) {
+                Log.e(TAG, "No valid conversation keys to backup (all conversations may have been deleted)")
+                return@withContext null
+            }
+            
+            Log.d(TAG, "Found ${conversationIds.size} conversation keys to backup (filtered from ${keysJson.length()} total)")
             
             // Encrypt with PIN
-            val (encrypted, salt, iv) = CryptoManager.encryptWithPin(keysJson.toString(), pin)
+            val (encrypted, salt, iv) = CryptoManager.encryptWithPin(filteredKeysJson.toString(), pin)
             
             Log.d(TAG, "✅ Backup created successfully")
             BackupData(
@@ -71,6 +85,85 @@ class KeyBackupManager(context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "Error creating backup", e)
             null
+        }
+    }
+    
+    /**
+     * Filter keys to only include those for conversations that still exist
+     */
+    private suspend fun filterKeysForExistingConversations(keysJson: JSONObject, token: String): JSONObject {
+        try {
+            // Get list of existing conversations
+            val response = api.getConversations("Bearer $token", limit = 100)
+            val existingConversationIds = response.items.map { it.id }.toSet()
+            
+            Log.d(TAG, "User has ${existingConversationIds.size} existing conversations")
+            
+            // Filter keys
+            val filteredJson = JSONObject()
+            val iterator = keysJson.keys()
+            var removedCount = 0
+            
+            while (iterator.hasNext()) {
+                val conversationId = iterator.next()
+                if (conversationId in existingConversationIds) {
+                    filteredJson.put(conversationId, keysJson.getString(conversationId))
+                } else {
+                    Log.d(TAG, "⏭️ Skipping orphan key for deleted conversation: $conversationId")
+                    removedCount++
+                }
+            }
+            
+            if (removedCount > 0) {
+                Log.d(TAG, "Removed $removedCount orphan keys from backup")
+            }
+            
+            return filteredJson
+        } catch (e: Exception) {
+            Log.e(TAG, "Error filtering conversations, using all keys", e)
+            return keysJson
+        }
+    }
+    
+    /**
+     * Clean up local orphan keys for conversations that no longer exist.
+     * This removes keys from local storage that are for deleted conversations.
+     * 
+     * @param token Authentication token
+     * @return Number of orphan keys removed
+     */
+    suspend fun cleanupOrphanKeys(token: String): Int = withContext(Dispatchers.IO) {
+        try {
+            Log.d(TAG, "Cleaning up orphan local keys...")
+            
+            // Get all local keys
+            val allLocalKeys = keyManager.getAllSessionKeys()
+            if (allLocalKeys.isEmpty()) {
+                Log.d(TAG, "No local keys to clean up")
+                return@withContext 0
+            }
+            
+            // Get list of existing conversations
+            val response = api.getConversations("Bearer $token", limit = 100)
+            val existingConversationIds = response.items.map { it.id }.toSet()
+            
+            Log.d(TAG, "Found ${allLocalKeys.size} local keys, ${existingConversationIds.size} existing conversations")
+            
+            // Find orphan keys
+            var removedCount = 0
+            for ((conversationId, _) in allLocalKeys) {
+                if (conversationId !in existingConversationIds) {
+                    Log.d(TAG, "🗑️ Removing orphan key for: $conversationId")
+                    keyManager.clearSessionKey(conversationId)
+                    removedCount++
+                }
+            }
+            
+            Log.d(TAG, "✅ Cleaned up $removedCount orphan keys")
+            removedCount
+        } catch (e: Exception) {
+            Log.e(TAG, "Error cleaning up orphan keys", e)
+            0
         }
     }
     
@@ -226,6 +319,11 @@ class KeyBackupManager(context: Context) {
     /**
      * Import session keys from JSON and store locally
      * Also re-encrypts keys with new RSA public key and uploads to server
+     * 
+     * **IMPORTANT**: Only restores keys if:
+     * 1. No key exists on server for this conversation, OR
+     * 2. Existing key on server cannot be decrypted (outdated)
+     * This prevents overwriting newer keys with old backup keys.
      */
     private suspend fun importSessionKeys(keysJson: JSONObject, token: String): Int {
         var restoredCount = 0
@@ -243,6 +341,48 @@ class KeyBackupManager(context: Context) {
             val keyBase64 = keysJson.getString(conversationId)
             
             try {
+                // **CRITICAL**: Check if key already exists on server and can be decrypted
+                val shouldRestore = try {
+                    val existingKey = api.getMyConversationKey("Bearer $token", conversationId)
+                    // Key exists on server, check if we can decrypt it
+                    Log.d(TAG, "Key exists on server for $conversationId, checking if it works...")
+                    
+                    // Try to decrypt existing key
+                    val privateKey = keyManager.getRSAPrivateKey()
+                    if (privateKey != null) {
+                        try {
+                            CryptoManager.rsaDecrypt(existingKey.encryptedSessionKey, privateKey)
+                            // Decryption succeeded - existing key is valid, DO NOT overwrite
+                            Log.d(TAG, "✅ Existing key for $conversationId works, skipping restore")
+                            false
+                        } catch (e: Exception) {
+                            // Decryption failed - existing key is outdated, restore backup
+                            Log.w(TAG, "⚠️ Existing key for $conversationId is outdated, will restore from backup")
+                            true
+                        }
+                    } else {
+                        Log.e(TAG, "❌ No private key available to verify existing key")
+                        false
+                    }
+                } catch (e: retrofit2.HttpException) {
+                    if (e.code() == 404) {
+                        // No key on server - safe to restore
+                        Log.d(TAG, "No key on server for $conversationId, will restore from backup")
+                        true
+                    } else {
+                        Log.e(TAG, "HTTP ${e.code()} checking key for $conversationId", e)
+                        false
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error checking existing key for $conversationId", e)
+                    false
+                }
+                
+                if (!shouldRestore) {
+                    Log.d(TAG, "⏭️ Skipping restore for $conversationId (key exists and works)")
+                    continue
+                }
+                
                 // 1. Decode the session key from backup
                 val sessionKey = CryptoManager.decodeSecretKey(keyBase64)
                 

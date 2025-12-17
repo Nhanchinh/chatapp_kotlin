@@ -81,7 +81,13 @@ fun KeyBackupScreen(
                     }
                 }
                 
-                // Get local conversation IDs
+                // **AUTO-CLEANUP**: Remove orphan keys for deleted conversations
+                val cleanedUp = keyBackupManager.cleanupOrphanKeys(token)
+                if (cleanedUp > 0) {
+                    android.util.Log.d("KeyBackupScreen", "Cleaned up $cleanedUp orphan keys")
+                }
+                
+                // Get local conversation IDs (after cleanup)
                 localConversationIds = keyManager.getBackedUpConversationIds()
             }
         } catch (e: Exception) {
@@ -344,7 +350,7 @@ fun KeyBackupScreen(
                         try {
                             val token = authManager.getValidAccessToken()
                             if (token != null) {
-                                val backup = keyBackupManager.createBackup(pin)
+                                val backup = keyBackupManager.createBackup(pin, token)
                                 if (backup != null) {
                                     val success = keyBackupManager.uploadBackup(backup, token)
                                     if (success) {
