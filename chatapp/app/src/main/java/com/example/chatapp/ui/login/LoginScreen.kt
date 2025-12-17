@@ -355,6 +355,116 @@ fun LoginScreen(
             }
         }
     }
+
+    // OTP Verification Dialog
+    if (state.showOtpDialog) {
+        AlertDialog(
+            onDismissRequest = { loginViewModel.dismissOtpDialog() },
+            containerColor = Color.White,
+            shape = RoundedCornerShape(24.dp),
+            title = {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "📧",
+                        fontSize = 48.sp
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Xác thực Email",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF1A1A1A)
+                    )
+                }
+            },
+            text = {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = state.otpMessage ?: "Nhập mã OTP đã gửi đến email của bạn",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color(0xFF666666),
+                        textAlign = TextAlign.Center
+                    )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // OTP Input
+                    OutlinedTextField(
+                        value = state.otpValue,
+                        onValueChange = { loginViewModel.onOtpChange(it) },
+                        label = { Text("Mã OTP (6 số)") },
+                        singleLine = true,
+                        enabled = !state.isLoading,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color(0xFF667EEA),
+                            unfocusedBorderColor = Color(0xFFE0E0E0),
+                            focusedLabelColor = Color(0xFF667EEA)
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    
+                    // Error Message in Dialog
+                    if (state.errorMessage != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = state.errorMessage ?: "",
+                            color = Color(0xFFC62828),
+                            style = MaterialTheme.typography.bodySmall,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    // Resend OTP
+                    TextButton(
+                        onClick = { loginViewModel.resendRegistrationOtp() },
+                        enabled = !state.isLoading
+                    ) {
+                        Text(
+                            "Gửi lại mã OTP",
+                            color = Color(0xFF667EEA),
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { loginViewModel.verifyRegistrationOtp() },
+                    enabled = !state.isLoading && state.otpValue.length == 6,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF667EEA),
+                        disabledContainerColor = Color(0xFFBDBDBD)
+                    )
+                ) {
+                    if (state.isLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            color = Color.White,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text("Xác nhận", color = Color.White)
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { loginViewModel.dismissOtpDialog() },
+                    enabled = !state.isLoading
+                ) {
+                    Text("Hủy", color = Color(0xFF757575))
+                }
+            }
+        )
+    }
 }
-
-

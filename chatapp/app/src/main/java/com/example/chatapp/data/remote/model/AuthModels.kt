@@ -168,6 +168,38 @@ data class ChangePasswordRequest(
     @Json(name = "new_password") val newPassword: String
 )
 
+// ===== Registration OTP =====
+
+data class RegistrationOtpRequest(
+    val email: String,
+    val password: String,
+    @Json(name = "full_name") val fullName: String
+)
+
+data class RegistrationOtpResponse(
+    val success: Boolean,
+    val message: String,
+    @Json(name = "expires_in") val expiresIn: Int
+)
+
+data class VerifyRegistrationOtpRequest(
+    val email: String,
+    val otp: String,
+    @Json(name = "public_key") val publicKey: String? = null
+)
+
+data class VerifyRegistrationOtpResponse(
+    val success: Boolean,
+    val message: String,
+    @Json(name = "access_token") val accessToken: String,
+    @Json(name = "token_type") val tokenType: String,
+    @Json(name = "expires_in") val expiresIn: Long,
+    @Json(name = "refresh_token") val refreshToken: String,
+    @Json(name = "refresh_expires_in") val refreshExpiresIn: Long,
+    val user: UserDto,
+    @Json(name = "requires_public_key") val requiresPublicKey: Boolean
+)
+
 // ========== Key Backup Models ==========
 
 data class CreateBackupRequest(

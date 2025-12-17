@@ -11,6 +11,10 @@ import com.example.chatapp.data.remote.model.VerifyOtpRequest
 import com.example.chatapp.data.remote.model.VerifyOtpResponse
 import com.example.chatapp.data.remote.model.ResetPasswordRequest
 import com.example.chatapp.data.remote.model.ChangePasswordRequest
+import com.example.chatapp.data.remote.model.RegistrationOtpRequest
+import com.example.chatapp.data.remote.model.RegistrationOtpResponse
+import com.example.chatapp.data.remote.model.VerifyRegistrationOtpRequest
+import com.example.chatapp.data.remote.model.VerifyRegistrationOtpResponse
 import com.example.chatapp.data.remote.model.SearchUsersResponse
 import com.example.chatapp.data.remote.model.FriendActionResponse
 import com.example.chatapp.data.remote.model.FriendsListResponse
@@ -250,6 +254,17 @@ interface ApiService {
         @Header("Authorization") token: String,
         @Body body: ChangePasswordRequest
     ): SimpleMessageResponse
+
+    // Registration OTP API
+    @POST("auth/request-registration-otp")
+    suspend fun requestRegistrationOtp(
+        @Body body: RegistrationOtpRequest
+    ): RegistrationOtpResponse
+
+    @POST("auth/verify-registration-otp")
+    suspend fun verifyRegistrationOtp(
+        @Body body: VerifyRegistrationOtpRequest
+    ): VerifyRegistrationOtpResponse
 
     // Media API
     @POST("media")

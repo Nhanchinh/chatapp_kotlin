@@ -518,6 +518,110 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
+     * Request OTP for registration
+     * Step 1: Send email, password, fullName to get OTP
+     */
+    suspend fun requestRegistrationOtp(
+        email: String,
+        password: String,
+        fullName: String
+    ): Result<com.example.chatapp.data.remote.model.RegistrationOtpResponse> {
+        return try {
+            val response = ApiClient.apiService.requestRegistrationOtp(
+                com.example.chatapp.data.remote.model.RegistrationOtpRequest(
+                    email = email,
+                    password = password,
+                    fullName = fullName
+                )
+            )
+            Result.success(response)
+        } catch (e: retrofit2.HttpException) {
+            val errorBody = e.response()?.errorBody()?.string()
+            val message = try {
+                val json = org.json.JSONObject(errorBody ?: "{}")
+                json.optString("detail", "Không thể gửi OTP")
+            } catch (_: Exception) {
+                "Không thể gửi OTP"
+            }
+            Result.failure(Exception(message))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Verify OTP and complete registration
+     * Step 2: Verify OTP, create account, and auto-login
+     */
+    suspend fun verifyRegistrationOtp(
+        email: String,
+        otp: String
+    ): Result<Unit> {
+        return try {
+            val response = ApiClient.apiService.verifyRegistrationOtp(
+                com.example.chatapp.data.remote.model.VerifyRegistrationOtpRequest(
+                    email = email,
+                    otp = otp,
+                    publicKey = null  // Will be set later during E2EE setup
+                )
+            )
+            
+            // Auto-login: Save tokens and user data
+            val expiryTime = System.currentTimeMillis() + (response.expiresIn * 1000)
+            val refreshExpiryTime = System.currentTimeMillis() + (response.refreshExpiresIn * 1000)
+            
+            authManager.saveAuthSession(
+                accessToken = response.accessToken,
+                accessTokenExpiryTime = expiryTime,
+                refreshTokenValue = response.refreshToken,
+                refreshTokenExpiryTime = refreshExpiryTime
+            )
+            
+            // Save user profile
+            authManager.saveUserProfile(
+                id = response.user.id,
+                email = response.user.email,
+                fullName = response.user.fullName,
+                role = response.user.role,
+                avatar = response.user.avatar
+            )
+            
+            // Update KeyManager
+            response.user.id?.let { keyManager.setActiveUser(it) }
+            
+            // Update auth state
+            _authState.value = AuthState(
+                isLoggedIn = true,
+                accessToken = response.accessToken,
+                isLoading = false,
+                isInitialized = true,
+                userId = response.user.id,
+                userEmail = response.user.email,
+                userFullName = response.user.fullName,
+                userRole = response.user.role,
+                userFriendCount = response.user.friendCount,
+                userLocation = response.user.location,
+                userHometown = response.user.hometown,
+                userBirthYear = response.user.birthYear,
+                userAvatar = response.user.avatar
+            )
+            
+            Result.success(Unit)
+        } catch (e: retrofit2.HttpException) {
+            val errorBody = e.response()?.errorBody()?.string()
+            val message = try {
+                val json = org.json.JSONObject(errorBody ?: "{}")
+                json.optString("detail", "Xác thực OTP thất bại")
+            } catch (_: Exception) {
+                "Xác thực OTP thất bại"
+            }
+            Result.failure(Exception(message))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
      * Upload avatar image for current user.
      * @param avatarPath Relative path returned from upload API
      */
