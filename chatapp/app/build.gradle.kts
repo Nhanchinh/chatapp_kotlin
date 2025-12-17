@@ -25,9 +25,23 @@ android {
         buildConfigField("String", "ZEGO_APP_SIGN", "\"\"")
     }
 
+    // Signing config for release build (using debug keystore for testing)
+    signingConfigs {
+        create("release") {
+            storeFile = file("${System.getProperty("user.home")}/.android/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // Use signing config
+            signingConfig = signingConfigs.getByName("release")
+            // Enable R8/ProGuard for code obfuscation and size reduction
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
