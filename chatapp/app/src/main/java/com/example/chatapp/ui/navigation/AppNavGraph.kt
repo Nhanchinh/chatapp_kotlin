@@ -43,6 +43,10 @@ fun AppNavGraph(
         composable(NavRoutes.Login.route) {
             LoginScreen(
                 onLoginSuccess = {
+                    // Reload chat data for new user
+                    chatViewModel.refreshFriendsList()
+                    chatViewModel.refreshConversations()
+                    
                     navController.navigate(NavRoutes.Home.route) {
                         popUpTo(NavRoutes.Login.route) { inclusive = true }
                         launchSingleTop = true

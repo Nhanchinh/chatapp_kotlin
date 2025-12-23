@@ -115,7 +115,7 @@ fun HomeScreen(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(myUserId) {
         // Request notification permission on first launch
         val fcmManager = authViewModel.getFCMManager()
         if (!fcmManager.hasNotificationPermission()) {
@@ -124,10 +124,12 @@ fun HomeScreen(
             }
         }
         
-        // Reset refreshing state when screen is first composed
-        isRefreshing = false
-        chatViewModel.refreshConversations()
-        chatViewModel.refreshFriendsList()
+        // Refresh data when userId changes (login/logout)
+        if (myUserId != null) {
+            isRefreshing = false
+            chatViewModel.refreshConversations()
+            chatViewModel.refreshFriendsList()
+        }
     }
     
     // Nested scroll connection to detect pull-to-refresh

@@ -108,6 +108,11 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         get() = currentUserId
 
     fun getMyUserIdValue(): String? = currentUserId.value
+    
+    /**
+     * Get userId directly from storage (for use when StateFlow might not be updated yet)
+     */
+    suspend fun getMyUserIdFromStorage(): String? = authManager.getUserIdOnce()
 
     /**
      * Lấy danh sách participant IDs của một conversation (dùng cho group call).
@@ -127,7 +132,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         refreshConversations()
         
         // Disconnect WebSocket khi user logout (userId = null)
+        // Và reload data khi user mới đăng nhập
         viewModelScope.launch {
+            var previousUserId: String? = null
             currentUserId.collect { userId ->
                 if (userId == null) {
                     // User đã logout, disconnect WebSocket và clear data
@@ -136,7 +143,15 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     _conversations.value = emptyList()
                     _friendsList.value = emptyList()
                     _friendsMap.value = emptyMap()
+                    decryptedConversations.clear()
+                    autoSetupAttempted.clear()
+                } else if (previousUserId == null && userId != null) {
+                    // User mới đăng nhập sau khi logout, reload data
+                    android.util.Log.d("ChatViewModel", "New user logged in: $userId, reloading data...")
+                    loadFriendsMap()
+                    refreshConversations()
                 }
+                previousUserId = userId
             }
         }
     }
@@ -175,7 +190,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 repository.getConversations().fold(
                     onSuccess = { response ->
                         try {
-                            val me = currentUserId.value
+                            // Read userId directly from storage to ensure we have the latest value
+                            val me = authManager.getUserIdOnce()
                             // First, create conversations with initial preview from backend
                             val initialConversations = response.items.mapNotNull { dto ->
                                 try {

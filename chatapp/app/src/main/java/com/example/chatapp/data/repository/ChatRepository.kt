@@ -88,7 +88,7 @@ class ChatRepository(private val context: Context) {
     }
 
     suspend fun connectWebSocket(resumeSince: Long? = null): Flow<WebSocketEvent> {
-        val userId = authManager.userId.first()
+        val userId = authManager.getUserIdOnce()
         val token = authManager.getValidAccessToken()
         
         if (userId == null || token == null) {
@@ -107,7 +107,7 @@ class ChatRepository(private val context: Context) {
         messageType: String? = null
     ): Result<Unit> {
         return try {
-            val userId = authManager.userId.first()
+            val userId = authManager.getUserIdOnce()
                 ?: return Result.failure(Exception("User ID not found"))
             val token = authManager.getValidAccessToken()
                 ?: return Result.failure(Exception("Not authenticated"))
@@ -173,7 +173,7 @@ class ChatRepository(private val context: Context) {
         messageType: String? = null
     ): Result<Unit> {
         return try {
-            val userId = authManager.userId.first()
+            val userId = authManager.getUserIdOnce()
                 ?: return Result.failure(Exception("User ID not found"))
             val token = authManager.getValidAccessToken()
                 ?: return Result.failure(Exception("Not authenticated"))
@@ -232,7 +232,7 @@ class ChatRepository(private val context: Context) {
     suspend fun createGroupWithE2EE(name: String, memberIds: List<String>): Result<CreateGroupResponse> {
         return try {
             val token = authManager.getValidAccessToken() ?: return Result.failure(Exception("Not authenticated"))
-            val me = authManager.userId.first() ?: return Result.failure(Exception("User ID not found"))
+            val me = authManager.getUserIdOnce() ?: return Result.failure(Exception("User ID not found"))
             val allMembers = (memberIds + me).distinct()
             val prepared = e2eeManager.prepareEncryptedKeys(allMembers, token)
                 ?: return Result.failure(Exception("Không thể chuẩn bị khóa nhóm"))
@@ -262,7 +262,7 @@ class ChatRepository(private val context: Context) {
         messageType: String? = null
     ): Result<MediaSendResult> {
         return try {
-            val userId = authManager.userId.first()
+            val userId = authManager.getUserIdOnce()
                 ?: return Result.failure(Exception("User ID not found"))
             val token = authManager.getValidAccessToken()
                 ?: return Result.failure(Exception("Not authenticated"))
@@ -411,7 +411,7 @@ class ChatRepository(private val context: Context) {
         limit: Int = 200
     ): Result<List<MediaItem>> {
         return try {
-            val me = authManager.userId.first()
+            val me = authManager.getUserIdOnce()
             val token = authManager.getValidAccessToken()
                 ?: return Result.failure(Exception("Not authenticated"))
 
@@ -471,7 +471,7 @@ class ChatRepository(private val context: Context) {
 
     suspend fun sendTyping(to: String, isTyping: Boolean): Result<Unit> {
         return try {
-            val userId = authManager.userId.first()
+            val userId = authManager.getUserIdOnce()
                 ?: return Result.failure(Exception("User ID not found"))
             
             webSocketClient.sendTyping(userId, to, isTyping)
@@ -482,7 +482,7 @@ class ChatRepository(private val context: Context) {
 
     suspend fun sendDelivered(messageId: String, conversationId: String, to: String): Result<Unit> {
         return try {
-            val userId = authManager.userId.first()
+            val userId = authManager.getUserIdOnce()
                 ?: return Result.failure(Exception("User ID not found"))
             
             webSocketClient.sendDelivered(messageId, conversationId, userId, to)
@@ -493,7 +493,7 @@ class ChatRepository(private val context: Context) {
 
     suspend fun sendSeen(messageId: String, conversationId: String, to: String): Result<Unit> {
         return try {
-            val userId = authManager.userId.first()
+            val userId = authManager.getUserIdOnce()
                 ?: return Result.failure(Exception("User ID not found"))
             
             webSocketClient.sendSeen(messageId, conversationId, userId, to)
@@ -666,7 +666,7 @@ class ChatRepository(private val context: Context) {
      */
     suspend fun createConversation(participantId: String): Result<String> {
         return try {
-            val me = authManager.userId.first()
+            val me = authManager.getUserIdOnce()
                 ?: return Result.failure(Exception("User ID not found"))
             val token = authManager.getValidAccessToken()
                 ?: return Result.failure(Exception("Not authenticated"))
@@ -712,7 +712,7 @@ class ChatRepository(private val context: Context) {
 
     suspend fun createGroupEncrypted(name: String, memberIds: List<String>): Result<String> {
         return try {
-            val me = authManager.userId.first()
+            val me = authManager.getUserIdOnce()
                 ?: return Result.failure(Exception("User ID not found"))
             val token = authManager.getValidAccessToken()
                 ?: return Result.failure(Exception("Not authenticated"))
