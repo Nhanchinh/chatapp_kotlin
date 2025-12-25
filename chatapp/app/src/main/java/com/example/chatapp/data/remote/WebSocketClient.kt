@@ -97,13 +97,16 @@ class WebSocketClient {
                                             conversationId = genericMessage.conversationId ?: "",
                                             clientMessageId = genericMessage.clientMessageId
                                         )
+                                        // Note: senderAvatar/senderName are not available in WebSocketMessage, so they'll be null
                                         val fallbackMessage = WebSocketMessageResponse(
                                             type = "message",
                                             from = genericMessage.from,
                                             content = genericMessage.content,
                                             ack = ack,
                                             iv = genericMessage.iv,
-                                            isEncrypted = genericMessage.isEncrypted
+                                            isEncrypted = genericMessage.isEncrypted,
+                                            senderAvatar = null,
+                                            senderName = null
                                         )
                                         trySend(WebSocketEvent.NewMessage(fallbackMessage))
                                         return

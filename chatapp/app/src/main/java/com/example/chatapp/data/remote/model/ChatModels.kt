@@ -114,7 +114,9 @@ data class WebSocketMessageResponse(
     @Json(name = "conversation_id") val conversationId: String? = null,
     @Json(name = "key_version") val keyVersion: Int? = null,
     @Json(name = "reply_to") val replyTo: String? = null,  // ID of message being replied to
-    @Json(name = "message_type") val messageType: String? = null
+    @Json(name = "message_type") val messageType: String? = null,
+    @Json(name = "sender_avatar") val senderAvatar: String? = null,  // Sender's avatar
+    @Json(name = "sender_name") val senderName: String? = null  // Sender's name
 )
 
 data class MediaUploadRequest(

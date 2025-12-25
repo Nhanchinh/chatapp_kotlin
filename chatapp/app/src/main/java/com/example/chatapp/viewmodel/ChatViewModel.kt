@@ -1512,7 +1512,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     text = displayText,
                     timestamp = System.currentTimeMillis(),
                     isFromMe = false,
-                    senderName = senderDisplayName,
+                    senderName = event.message.senderName ?: senderDisplayName,
+                    senderAvatar = event.message.senderAvatar,  // Map avatar from WebSocket
                     senderId = event.message.from,
                     receiverId = _currentContactId.value ?: me,
                     conversationId = conversationId,
