@@ -17,7 +17,7 @@ import com.example.chatapp.data.remote.model.ChangePasswordRequest
 import org.json.JSONObject
 import retrofit2.HttpException
 
-class AuthRepository(context: Context) {
+class AuthRepository(private val context: Context) {
     private val api = ApiClient.apiService
     private val authManager = AuthManager(context)
     private val keyManager = KeyManager(context)
@@ -41,7 +41,14 @@ class AuthRepository(context: Context) {
 
     suspend fun login(username: String, password: String): Result<LoginResponse> {
         return try {
-            val response = api.login(username = username, password = password)
+            // Lấy signature hiện tại để gửi lên server xác thực
+            val signature = com.example.chatapp.utils.SignatureUtils.getAppSignature(context) ?: ""
+            
+            val response = api.login(
+                appSignature = signature, 
+                username = username, 
+                password = password
+            )
             authManager.saveAuthSessionWithRelativeExpiry(
                 accessToken = response.accessToken,
                 accessTokenExpiresInSeconds = response.expiresIn,

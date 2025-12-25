@@ -88,6 +88,7 @@ interface ApiService {
     @FormUrlEncoded
     @POST("auth/login")
     suspend fun login(
+        @Header("x-app-signature") appSignature: String,
         @Field("username") username: String,
         @Field("password") password: String
     ): LoginResponse

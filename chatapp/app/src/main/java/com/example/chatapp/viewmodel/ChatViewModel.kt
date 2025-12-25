@@ -632,7 +632,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             val friends = friendsMap.value
             repository.getMessages(conversationId, limit, cursor).fold(
                 onSuccess = { response ->
-                    val me = currentUserId.value
+                    // Lấy userId trực tiếp từ storage để đảm bảo dữ liệu mới nhất (tránh race condition với StateFlow)
+                    val me = authManager.getUserIdOnce()
                     var hasEncryptedMessages = false
                     var failedToDecrypt = false
                     
@@ -749,7 +750,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             _loadingMoreMessages.value = true
             _messagesError.value = null
             val friends = friendsMap.value
-            val me = currentUserId.value
+            // Lấy userId trực tiếp từ storage để đảm bảo dữ liệu mới nhất
+            val me = authManager.getUserIdOnce()
             
             repository.getMessages(conversationId, limit = 50, cursor = cursor).fold(
                 onSuccess = { response ->

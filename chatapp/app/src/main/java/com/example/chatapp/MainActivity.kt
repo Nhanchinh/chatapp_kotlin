@@ -117,6 +117,11 @@ class MainActivity : ComponentActivity() {
         MyFirebaseMessagingService.onNewToken = { token ->
             Log.d(TAG, "New FCM token received: $token")
         }
+
+        // --- BẢO MẬT: KIỂM TRA SIGNATURE ---
+        if (!com.example.chatapp.utils.SignatureUtils.isValidSignature(this)) {
+             throw SecurityException("Ứng dụng này đã bị sửa đổi trái phép (Invalid Signature). Vui lòng tải bản gốc.")
+        }
     }
 
     override fun onResume() {
