@@ -536,12 +536,17 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             )
             Result.success(response)
         } catch (e: retrofit2.HttpException) {
-            val errorBody = e.response()?.errorBody()?.string()
-            val message = try {
-                val json = org.json.JSONObject(errorBody ?: "{}")
-                json.optString("detail", "Không thể gửi OTP")
-            } catch (_: Exception) {
-                "Không thể gửi OTP"
+            val message = when (e.code()) {
+                429 -> "Bạn đã thử quá nhiều lần. Vui lòng đợi 1 phút rồi thử lại."
+                else -> {
+                    val errorBody = e.response()?.errorBody()?.string()
+                    try {
+                        val json = org.json.JSONObject(errorBody ?: "{}")
+                        json.optString("detail", "Không thể gửi OTP")
+                    } catch (_: Exception) {
+                        "Không thể gửi OTP"
+                    }
+                }
             }
             Result.failure(Exception(message))
         } catch (e: Exception) {

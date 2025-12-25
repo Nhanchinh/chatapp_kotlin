@@ -15,6 +15,10 @@ data class LoginUiState(
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val isLoggedIn: Boolean = false,
+    // Validation states
+    val emailError: String? = null,
+    val passwordStrength: PasswordStrength = PasswordStrength.NONE,
+    val passwordError: String? = null,
     // OTP states
     val showOtpDialog: Boolean = false,
     val otpValue: String = "",
@@ -22,18 +26,68 @@ data class LoginUiState(
     val otpMessage: String? = null
 )
 
+enum class PasswordStrength {
+    NONE,       // Empty
+    WEAK,       // < 6 chars or only letters/numbers
+    MEDIUM,     // 6+ chars with letters and numbers
+    STRONG      // 8+ chars with letters, numbers, and special chars
+}
+
 class LoginViewModel(
     private val authViewModel: AuthViewModel
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(LoginUiState())
     val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()
+    
+    // Email regex pattern
+    private val emailPattern = android.util.Patterns.EMAIL_ADDRESS
+    
+    // Validate email format
+    private fun validateEmail(email: String): String? {
+        return when {
+            email.isBlank() -> null  // Don't show error for empty field
+            !emailPattern.matcher(email).matches() -> "Email không đúng định dạng"
+            else -> null
+        }
+    }
+    
+    // Calculate password strength
+    private fun calculatePasswordStrength(password: String): PasswordStrength {
+        if (password.isEmpty()) return PasswordStrength.NONE
+        
+        val hasLetter = password.any { it.isLetter() }
+        val hasDigit = password.any { it.isDigit() }
+        val hasSpecial = password.any { !it.isLetterOrDigit() }
+        
+        return when {
+            password.length >= 8 && hasLetter && hasDigit && hasSpecial -> PasswordStrength.STRONG
+            password.length >= 6 && hasLetter && hasDigit -> PasswordStrength.MEDIUM
+            password.length >= 6 -> PasswordStrength.WEAK
+            else -> PasswordStrength.WEAK
+        }
+    }
 
     fun onUsernameChange(value: String) {
-        _uiState.value = _uiState.value.copy(username = value, errorMessage = null)
+        val emailError = validateEmail(value)
+        _uiState.value = _uiState.value.copy(
+            username = value, 
+            emailError = emailError,
+            errorMessage = null
+        )
     }
 
     fun onPasswordChange(value: String) {
-        _uiState.value = _uiState.value.copy(password = value, errorMessage = null)
+        val strength = calculatePasswordStrength(value)
+        val passwordError = if (_uiState.value.isRegisterMode && value.length in 1..5) {
+            "Mật khẩu phải có ít nhất 6 ký tự"
+        } else null
+        
+        _uiState.value = _uiState.value.copy(
+            password = value, 
+            passwordStrength = strength,
+            passwordError = passwordError,
+            errorMessage = null
+        )
     }
 
     fun onFullNameChange(value: String) {

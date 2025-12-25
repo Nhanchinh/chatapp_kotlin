@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import com.example.chatapp.MainActivity
 import com.example.chatapp.viewmodel.AuthViewModel
 import com.example.chatapp.viewmodel.LoginViewModel
+import com.example.chatapp.viewmodel.PasswordStrength
 import com.example.chatapp.ui.common.KeyboardDismissWrapper
 
 @Composable
@@ -189,13 +190,18 @@ fun LoginScreen(
                                     tint = Color(0xFF667EEA)
                                 )
                             },
+                            isError = state.emailError != null,
+                            supportingText = state.emailError?.let { error ->
+                                { Text(error, color = Color(0xFFC62828)) }
+                            },
                             singleLine = true,
                             enabled = !state.isLoading,
                             modifier = Modifier.fillMaxWidth(),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = Color(0xFF667EEA),
                                 unfocusedBorderColor = Color(0xFFE0E0E0),
-                                focusedLabelColor = Color(0xFF667EEA)
+                                focusedLabelColor = Color(0xFF667EEA),
+                                errorBorderColor = Color(0xFFC62828)
                             ),
                             shape = RoundedCornerShape(12.dp)
                         )
@@ -241,6 +247,10 @@ fun LoginScreen(
                                     tint = Color(0xFF667EEA)
                                 )
                             },
+                            isError = state.passwordError != null,
+                            supportingText = state.passwordError?.let { error ->
+                                { Text(error, color = Color(0xFFC62828)) }
+                            },
                             singleLine = true,
                             visualTransformation = PasswordVisualTransformation(),
                             enabled = !state.isLoading,
@@ -248,10 +258,55 @@ fun LoginScreen(
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = Color(0xFF667EEA),
                                 unfocusedBorderColor = Color(0xFFE0E0E0),
-                                focusedLabelColor = Color(0xFF667EEA)
+                                focusedLabelColor = Color(0xFF667EEA),
+                                errorBorderColor = Color(0xFFC62828)
                             ),
                             shape = RoundedCornerShape(12.dp)
                         )
+                        
+                        // Password Strength Indicator (Register Mode only)
+                        AnimatedVisibility(
+                            visible = state.isRegisterMode && state.password.isNotEmpty(),
+                            enter = fadeIn() + slideInVertically(),
+                            exit = fadeOut() + slideOutVertically()
+                        ) {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                val (strengthColor, strengthText, strengthProgress) = when (state.passwordStrength) {
+                                    PasswordStrength.WEAK -> Triple(Color(0xFFC62828), "Yếu", 0.33f)
+                                    PasswordStrength.MEDIUM -> Triple(Color(0xFFFFA000), "Trung bình", 0.66f)
+                                    PasswordStrength.STRONG -> Triple(Color(0xFF2E7D32), "Mạnh", 1f)
+                                    else -> Triple(Color.Gray, "", 0f)
+                                }
+                                
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Độ mạnh mật khẩu:",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color(0xFF757575)
+                                    )
+                                    Text(
+                                        text = strengthText,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = strengthColor
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                LinearProgressIndicator(
+                                    progress = { strengthProgress },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(4.dp)
+                                        .clip(RoundedCornerShape(2.dp)),
+                                    color = strengthColor,
+                                    trackColor = Color(0xFFE0E0E0)
+                                )
+                            }
+                        }
 
                         // Error Message
                         AnimatedVisibility(

@@ -68,6 +68,12 @@ class AuthRepository(context: Context) {
                 ensurePublicKeySynced(response.requiresPublicKey == true)
             }
             Result.success(response)
+        } catch (e: HttpException) {
+            if (e.code() == 429) {
+                Result.failure(Exception("Bạn đã thử quá nhiều lần. Vui lòng đợi 1 phút rồi thử lại."))
+            } else {
+                Result.failure(e)
+            }
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -260,6 +266,10 @@ class AuthRepository(context: Context) {
 
     private fun mapError(throwable: Throwable): Exception {
         if (throwable is HttpException) {
+            // Handle rate limit error
+            if (throwable.code() == 429) {
+                return Exception("Bạn đã thử quá nhiều lần. Vui lòng đợi 1 phút rồi thử lại.")
+            }
             val message = try {
                 val errorBody = throwable.response()?.errorBody()?.string()
                 extractErrorMessage(errorBody).ifEmpty { throwable.message() ?: "Đã xảy ra lỗi" }
