@@ -76,10 +76,31 @@ class AuthRepository(private val context: Context) {
             }
             Result.success(response)
         } catch (e: HttpException) {
-            if (e.code() == 429) {
-                Result.failure(Exception("Bạn đã thử quá nhiều lần. Vui lòng đợi 1 phút rồi thử lại."))
-            } else {
-                Result.failure(e)
+            when (e.code()) {
+                429 -> Result.failure(Exception("Bạn đã thử quá nhiều lần. Vui lòng đợi 1 phút rồi thử lại."))
+                423 -> {
+                    // Account locked - extract detail message from response
+                    val errorBody = e.response()?.errorBody()?.string()
+                    val lockMessage = try {
+                        val json = JSONObject(errorBody ?: "{}")
+                        json.optString("detail", "Tài khoản bị khóa tạm thời. Vui lòng thử lại sau.")
+                    } catch (_: Exception) {
+                        "Tài khoản bị khóa tạm thời. Vui lòng thử lại sau."
+                    }
+                    Result.failure(Exception(lockMessage))
+                }
+                400 -> {
+                    // Handle remaining attempts message
+                    val errorBody = e.response()?.errorBody()?.string()
+                    val message = try {
+                        val json = JSONObject(errorBody ?: "{}")
+                        json.optString("detail", "Sai email hoặc mật khẩu")
+                    } catch (_: Exception) {
+                        "Sai email hoặc mật khẩu"
+                    }
+                    Result.failure(Exception(message))
+                }
+                else -> Result.failure(e)
             }
         } catch (e: Exception) {
             Result.failure(e)
