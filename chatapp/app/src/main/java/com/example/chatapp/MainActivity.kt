@@ -119,9 +119,10 @@ class MainActivity : ComponentActivity() {
         }
 
         // --- BẢO MẬT: KIỂM TRA SIGNATURE ---
-        if (!com.example.chatapp.utils.SignatureUtils.isValidSignature(this)) {
-             throw SecurityException("Ứng dụng này đã bị sửa đổi trái phép (Invalid Signature). Vui lòng tải bản gốc.")
-        }
+        // TODO: Uncomment khi build Release để chống repackaging
+        // if (!com.example.chatapp.utils.SignatureUtils.isValidSignature(this)) {
+        //      throw SecurityException("Ứng dụng này đã bị sửa đổi trái phép (Invalid Signature). Vui lòng tải bản gốc.")
+        // }
     }
 
     override fun onResume() {
